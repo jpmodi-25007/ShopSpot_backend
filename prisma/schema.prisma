@@ -1,0 +1,915 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider        = "prisma-client-js"
+  previewFeatures = ["postgresqlExtensions"]
+}
+
+datasource db {
+  provider   = "postgresql"
+  url        = env("DATABASE_URL")
+  extensions = [uuid_ossp(map: "uuid-ossp")]
+}
+
+// ─────────────────────────────────────────────
+// ENUMS
+// ─────────────────────────────────────────────
+
+enum UserRole {
+  CUSTOMER
+  SHOPKEEPER
+  INFLUENCER
+  ADMIN
+}
+
+enum ShopStatus {
+  ACTIVE
+  INACTIVE
+  SUSPENDED
+}
+
+enum SubscriptionTier {
+  FREE
+  BASIC
+  PREMIUM
+  ELITE
+}
+
+enum StockStatus {
+  IN_STOCK
+  LOW_STOCK
+  OUT_OF_STOCK
+}
+
+enum NegotiationStatus {
+  PENDING
+  COUNTERED
+  ACCEPTED
+  REJECTED
+  EXPIRED
+}
+
+enum MessageType {
+  TEXT
+  IMAGE
+  PRICE_OFFER
+  PRICE_COUNTER
+  DEAL_ACCEPTED
+}
+
+enum ReservationStatus {
+  ACTIVE
+  COMPLETED
+  CANCELLED
+  EXPIRED
+}
+
+enum OrderStatus {
+  PENDING
+  CONFIRMED
+  PACKED
+  SHIPPED
+  DELIVERED
+  CANCELLED
+}
+
+enum PaymentStatus {
+  PENDING
+  PAID
+  FAILED
+  REFUNDED
+}
+
+enum DeliveryType {
+  STANDARD
+  EXPRESS
+  SELF_PICKUP
+}
+
+enum MetricsSource {
+  SELF_REPORTED
+  VERIFIED
+}
+
+enum VerificationStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum CampaignStatus {
+  DRAFT
+  PUBLISHED
+  BIDDING_OPEN
+  BIDDING_CLOSED
+  CREATOR_SELECTED
+  ASSIGNED
+  PAYMENT_PENDING
+  IN_PROGRESS
+  CONTENT_SUBMITTED
+  SHOPKEEPER_REVIEW
+  POSTED
+  COMPLETED
+  CANCELLED
+  DISPUTED
+  EXPIRED
+}
+
+enum BidStatus {
+  SUBMITTED
+  VIEWED
+  SHORTLISTED
+  COUNTERED
+  ACCEPTED
+  REJECTED
+  WITHDRAWN
+  EXPIRED
+}
+
+enum BudgetType {
+  PER_CREATOR
+  TOTAL
+}
+
+enum CampaignPaymentStatus {
+  NOT_CONFIRMED
+  ADVANCE_PAID
+  FULLY_PAID
+  DISPUTED
+  CONFIRMATION_PENDING
+}
+
+enum ContentStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  SUBMITTED
+  REVISION_REQUIRED
+  APPROVED
+  POSTED
+}
+
+enum NotificationType {
+  NEGOTIATION_RECEIVED
+  NEGOTIATION_COUNTERED
+  NEGOTIATION_ACCEPTED
+  NEGOTIATION_REJECTED
+  RESERVATION_CREATED
+  RESERVATION_EXPIRING
+  RESERVATION_EXPIRED
+  RESERVATION_COMPLETED
+  NEW_ORDER
+  ORDER_STATUS_CHANGED
+  CAMPAIGN_PUBLISHED
+  BID_RECEIVED
+  BID_VIEWED
+  BID_SHORTLISTED
+  BID_COUNTERED
+  BID_ACCEPTED
+  BID_REJECTED
+  CONTENT_SUBMITTED
+  CONTENT_APPROVED
+  REVISION_REQUESTED
+  CAMPAIGN_COMPLETED
+  STOCK_ALERT
+  PRICE_DROP
+  SYSTEM
+}
+
+// ─────────────────────────────────────────────
+// CORE USER MODELS
+// ─────────────────────────────────────────────
+
+model User {
+  id                 String    @id @default(uuid())
+  email              String?   @unique
+  mobile             String?   @unique
+  password           String
+  name               String?
+  avatarUrl          String?
+  role               UserRole  @default(CUSTOMER)
+  languagePreference String    @default("en")
+  addressJson        Json?     @map("address")
+  isEmailVerified    Boolean   @default(false)
+  isMobileVerified   Boolean   @default(false)
+  isActive           Boolean   @default(true)
+  lastLoginAt        DateTime?
+  createdAt          DateTime  @default(now())
+  updatedAt          DateTime  @updatedAt
+
+  shop                 Shop?
+  refreshTokens        RefreshToken[]
+  savedProducts        SavedProduct[]
+  savedShops           SavedShop[]
+  customerNegotiations Negotiation[]      @relation("CustomerNegotiations")
+  customerReservations Reservation[]      @relation("CustomerReservations")
+  customerOrders       Order[]            @relation("CustomerOrders")
+  reviews              Review[]
+  addresses            Address[]
+  notifications        Notification[]
+  analyticsEvents      AnalyticsEvent[]
+  influencerProfile    InfluencerProfile?
+  devices              UserDevice[]
+  sentMessages         Message[]
+  reports              ContentReport[]
+  auditLogs            AuditLog[]
+
+  @@map("users")
+}
+
+model RefreshToken {
+  id        String    @id @default(uuid())
+  token     String    @unique
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  expiresAt DateTime
+  revokedAt DateTime?
+  createdAt DateTime  @default(now())
+
+  @@map("refresh_tokens")
+}
+
+model UserDevice {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  fcmToken  String   @unique
+  platform  String // ios | android | web
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@map("user_devices")
+}
+
+// ─────────────────────────────────────────────
+// SHOP & CATALOG MODELS
+// ─────────────────────────────────────────────
+
+model Category {
+  id           String     @id @default(uuid())
+  name         String
+  slug         String     @unique
+  iconUrl      String?
+  parentId     String?
+  parent       Category?  @relation("CategoryHierarchy", fields: [parentId], references: [id])
+  children     Category[] @relation("CategoryHierarchy")
+  displayOrder Int        @default(0)
+  isActive     Boolean    @default(true)
+  createdAt    DateTime   @default(now())
+
+  products Product[]
+  shops    Shop[]
+
+  @@map("categories")
+}
+
+model Shop {
+  id                    String           @id @default(uuid())
+  ownerId               String           @unique
+  owner                 User             @relation(fields: [ownerId], references: [id])
+  name                  String
+  slug                  String           @unique
+  description           String?
+  categoryId            String?
+  category              Category?        @relation(fields: [categoryId], references: [id])
+  logoUrl               String?
+  coverImageUrl         String?
+  address               String
+  latitude              Float
+  longitude             Float
+  city                  String?
+  state                 String?
+  pincode               String?
+  phone                 String?
+  whatsapp              String?
+  email                 String?
+  gstNumber             String?
+  isGstVerified         Boolean          @default(false)
+  isKycVerified         Boolean          @default(false)
+  verificationDocuments Json?
+  businessHours         Json?
+  rating                Decimal          @default(0) @db.Decimal(2, 1)
+  reviewCount           Int              @default(0)
+  subscriptionTier      SubscriptionTier @default(FREE)
+  subscriptionExpiresAt DateTime?
+  status                ShopStatus       @default(ACTIVE)
+  isOpen                Boolean          @default(true)
+  createdAt             DateTime         @default(now())
+  updatedAt             DateTime         @updatedAt
+
+  products        Product[]
+  negotiations    Negotiation[]        @relation("ShopNegotiations")
+  reservations    Reservation[]        @relation("ShopReservations")
+  orders          Order[]              @relation("ShopOrders")
+  reviews         Review[]
+  subscriptions   Subscription[]
+  savedByUsers    SavedShop[]
+  analyticsEvents AnalyticsEvent[]
+  offers          Offer[]
+  campaigns       InfluencerCampaign[]
+  ContentReport   ContentReport[]
+  suppliers       Supplier[]
+  purchaseOrders  PurchaseOrder[]
+
+  @@map("shops")
+}
+
+model Product {
+  id                String      @id @default(uuid())
+  shopId            String
+  shop              Shop        @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name              String
+  slug              String?
+  description       String?
+  categoryId        String?
+  category          Category?   @relation(fields: [categoryId], references: [id])
+  brand             String?
+  images            String[]    @default([])
+  mrp               Decimal?    @db.Decimal(10, 2)
+  sellingPrice      Decimal     @db.Decimal(10, 2)
+  currency          String      @default("INR")
+  stockQuantity     Int         @default(0)
+  stockStatus       StockStatus @default(IN_STOCK)
+  lowStockThreshold Int         @default(5)
+  sku               String?
+  barcode           String?
+  attributes        Json?
+  variants          Json?
+  isActive          Boolean     @default(true)
+  isFeatured        Boolean     @default(false)
+  viewCount         Int         @default(0)
+  inquiryCount      Int         @default(0)
+  reservationCount  Int         @default(0)
+  tags              String[]    @default([])
+  metaTitle         String?
+  metaDescription   String?
+  createdAt         DateTime    @default(now())
+  updatedAt         DateTime    @updatedAt
+
+  negotiations    Negotiation[]
+  reservations    Reservation[]
+  reviews         Review[]
+  savedByUsers    SavedProduct[]
+  analyticsEvents AnalyticsEvent[]
+  campaigns       InfluencerCampaign[]
+  reports         ContentReport[]
+  stockHistory    StockHistory[]
+
+  @@map("products")
+}
+
+model Offer {
+  id          String   @id @default(uuid())
+  shopId      String
+  shop        Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  discountPct Decimal? @db.Decimal(5, 2)
+  bannerUrl   String?
+  startsAt    DateTime
+  expiresAt   DateTime
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+
+  @@map("offers")
+}
+
+// ─────────────────────────────────────────────
+// NEGOTIATION & CHAT MODELS
+// ─────────────────────────────────────────────
+
+model Negotiation {
+  id                String            @id @default(uuid())
+  productId         String
+  product           Product           @relation(fields: [productId], references: [id])
+  shopId            String
+  shop              Shop              @relation("ShopNegotiations", fields: [shopId], references: [id])
+  customerId        String
+  customer          User              @relation("CustomerNegotiations", fields: [customerId], references: [id])
+  initialPrice      Decimal           @db.Decimal(10, 2)
+  offeredPrice      Decimal           @db.Decimal(10, 2)
+  counterPrice      Decimal?          @db.Decimal(10, 2)
+  finalPrice        Decimal?          @db.Decimal(10, 2)
+  counterRound      Int               @default(0)
+  status            NegotiationStatus @default(PENDING)
+  customerMessage   String?
+  shopkeeperMessage String?
+  expiresAt         DateTime?
+  acceptedAt        DateTime?
+  createdAt         DateTime          @default(now())
+  updatedAt         DateTime          @updatedAt
+
+  messages     Message[]
+  reservations Reservation[]
+
+  @@map("negotiations")
+}
+
+model Message {
+  id            String      @id @default(uuid())
+  negotiationId String
+  negotiation   Negotiation @relation(fields: [negotiationId], references: [id], onDelete: Cascade)
+  senderId      String
+  sender        User        @relation(fields: [senderId], references: [id])
+  senderRole    String // customer | shopkeeper
+  messageType   MessageType @default(TEXT)
+  content       String
+  metadata      Json?
+  isRead        Boolean     @default(false)
+  createdAt     DateTime    @default(now())
+
+  @@map("messages")
+}
+
+// ─────────────────────────────────────────────
+// RESERVATION MODEL
+// ─────────────────────────────────────────────
+
+model Reservation {
+  id            String            @id @default(uuid())
+  negotiationId String?
+  negotiation   Negotiation?      @relation(fields: [negotiationId], references: [id])
+  productId     String
+  product       Product           @relation(fields: [productId], references: [id])
+  shopId        String
+  shop          Shop              @relation("ShopReservations", fields: [shopId], references: [id])
+  customerId    String
+  customer      User              @relation("CustomerReservations", fields: [customerId], references: [id])
+  reservedPrice Decimal           @db.Decimal(10, 2)
+  quantity      Int               @default(1)
+  qrToken       String            @unique
+  status        ReservationStatus @default(ACTIVE)
+  expiresAt     DateTime
+  visitedAt     DateTime?
+  createdAt     DateTime          @default(now())
+
+  @@map("reservations")
+}
+
+// ─────────────────────────────────────────────
+// ORDER & PAYMENT MODELS
+// ─────────────────────────────────────────────
+
+model Order {
+  id              String        @id @default(uuid())
+  orderNumber     String        @unique
+  customerId      String
+  customer        User          @relation("CustomerOrders", fields: [customerId], references: [id])
+  shopId          String
+  shop            Shop          @relation("ShopOrders", fields: [shopId], references: [id])
+  items           Json
+  subtotal        Decimal       @db.Decimal(10, 2)
+  deliveryCharge  Decimal       @default(0) @db.Decimal(10, 2)
+  discount        Decimal       @default(0) @db.Decimal(10, 2)
+  total           Decimal       @db.Decimal(10, 2)
+  deliveryAddress Json
+  deliveryType    DeliveryType  @default(STANDARD)
+  status          OrderStatus   @default(PENDING)
+  paymentStatus   PaymentStatus @default(PENDING)
+  paymentMethod   String?
+  paymentId       String?
+  trackingInfo    Json?
+  idempotencyKey  String?       @unique
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  reviews Review[]
+
+  @@map("orders")
+}
+
+// ─────────────────────────────────────────────
+// REVIEW & SOCIAL MODELS
+// ─────────────────────────────────────────────
+
+model Review {
+  id                 String   @id @default(uuid())
+  shopId             String?
+  shop               Shop?    @relation(fields: [shopId], references: [id])
+  productId          String?
+  product            Product? @relation(fields: [productId], references: [id])
+  customerId         String
+  customer           User     @relation(fields: [customerId], references: [id])
+  orderId            String?
+  order              Order?   @relation(fields: [orderId], references: [id])
+  rating             Int
+  title              String?
+  comment            String?
+  images             String[] @default([])
+  isVerifiedPurchase Boolean  @default(false)
+  helpfulCount       Int      @default(0)
+  isModerated        Boolean  @default(false)
+  isPublic           Boolean  @default(false)
+  moderationNote     String?
+  createdAt          DateTime @default(now())
+
+  @@map("reviews")
+}
+
+model SavedProduct {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, productId])
+  @@map("saved_products")
+}
+
+model SavedShop {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  shopId    String
+  shop      Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  createdAt DateTime @default(now())
+
+  @@unique([userId, shopId])
+  @@map("saved_shops")
+}
+
+model Address {
+  id        String   @id @default(uuid())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  label     String // Home | Work | Other
+  line1     String
+  line2     String?
+  city      String
+  state     String
+  pincode   String
+  isDefault Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@map("addresses")
+}
+
+// ─────────────────────────────────────────────
+// SUBSCRIPTION MODEL
+// ─────────────────────────────────────────────
+
+model Subscription {
+  id             String           @id @default(uuid())
+  shopId         String
+  shop           Shop             @relation(fields: [shopId], references: [id])
+  planName       String
+  planTier       SubscriptionTier
+  price          Decimal          @db.Decimal(10, 2)
+  billingCycle   String           @default("monthly")
+  features       Json
+  productLimit   Int?
+  analyticsLevel String?
+  adCredits      Int              @default(0)
+  razorpaySubId  String?
+  startedAt      DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean          @default(true)
+  createdAt      DateTime         @default(now())
+
+  @@map("subscriptions")
+}
+
+// ─────────────────────────────────────────────
+// ANALYTICS & NOTIFICATION MODELS
+// ─────────────────────────────────────────────
+
+model AnalyticsEvent {
+  id        String   @id @default(uuid())
+  eventType String
+  shopId    String?
+  shop      Shop?    @relation(fields: [shopId], references: [id])
+  productId String?
+  product   Product? @relation(fields: [productId], references: [id])
+  userId    String?
+  user      User?    @relation(fields: [userId], references: [id])
+  sessionId String?
+  metadata  Json?
+  createdAt DateTime @default(now())
+
+  @@map("analytics_events")
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String
+  user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  type      NotificationType
+  title     String
+  body      String
+  data      Json?
+  isRead    Boolean          @default(false)
+  createdAt DateTime         @default(now())
+
+  @@map("notifications")
+}
+
+// ─────────────────────────────────────────────
+// INFLUENCER MARKETPLACE MODELS
+// ─────────────────────────────────────────────
+
+model InfluencerProfile {
+  id                 String             @id @default(uuid())
+  userId             String             @unique
+  user               User               @relation(fields: [userId], references: [id])
+  displayName        String
+  username           String             @unique
+  bio                String?
+  profileImage       String?
+  city               String?
+  latitude           Float?
+  longitude          Float?
+  languages          String[]           @default([])
+  categories         String[]           @default([])
+  instagramUrl       String?
+  facebookUrl        String?
+  youtubeUrl         String?
+  followers          Int                @default(0)
+  avgViews           Int                @default(0)
+  avgStoryViews      Int                @default(0)
+  engagementRate     Decimal            @default(0) @db.Decimal(5, 2)
+  avgLikes           Int                @default(0)
+  avgComments        Int                @default(0)
+  audienceLocation   Json?
+  metricsSource      MetricsSource      @default(SELF_REPORTED)
+  verificationStatus VerificationStatus @default(PENDING)
+  creatorScore       Int                @default(0)
+  rating             Decimal            @default(0) @db.Decimal(2, 1)
+  completedCampaigns Int                @default(0)
+  onTimeRate         Decimal            @default(0) @db.Decimal(5, 2)
+  isActive           Boolean            @default(true)
+  createdAt          DateTime           @default(now())
+  updatedAt          DateTime           @updatedAt
+
+  bids        InfluencerBid[]
+  assignments CampaignAssignment[]
+
+  @@map("influencer_profiles")
+}
+
+model InfluencerCampaign {
+  id                  String         @id @default(uuid())
+  shopkeeperId        String
+  shopId              String
+  shop                Shop           @relation(fields: [shopId], references: [id])
+  productId           String?
+  product             Product?       @relation(fields: [productId], references: [id])
+  title               String
+  description         String
+  platforms           String[]       @default([])
+  contentTypes        String[]       @default([])
+  creatorCount        Int            @default(1)
+  budgetType          BudgetType     @default(PER_CREATOR)
+  budgetMin           Decimal        @db.Decimal(10, 2)
+  budgetMax           Decimal        @db.Decimal(10, 2)
+  totalBudget         Decimal?       @db.Decimal(10, 2)
+  city                String?
+  radiusKm            Float?
+  targetCategories    String[]       @default([])
+  targetLanguages     String[]       @default([])
+  minFollowers        Int?
+  minAvgViews         Int?
+  minEngagement       Decimal?       @db.Decimal(5, 2)
+  preferredStartDate  DateTime?
+  preferredEndDate    DateTime?
+  applicationDeadline DateTime?
+  deliverables        Json?
+  requirements        String?
+  status              CampaignStatus @default(DRAFT)
+  committedAmount     Decimal        @default(0) @db.Decimal(10, 2)
+  createdAt           DateTime       @default(now())
+  updatedAt           DateTime       @updatedAt
+
+  bids        InfluencerBid[]
+  assignments CampaignAssignment[]
+
+  @@map("influencer_campaigns")
+}
+
+model InfluencerBid {
+  id                    String             @id @default(uuid())
+  campaignId            String
+  campaign              InfluencerCampaign @relation(fields: [campaignId], references: [id])
+  influencerId          String
+  influencer            InfluencerProfile  @relation(fields: [influencerId], references: [id])
+  proposedAmount        Decimal            @db.Decimal(10, 2)
+  availableDate         DateTime
+  deliveryDate          DateTime
+  estimatedMinReach     Int?
+  estimatedMaxReach     Int?
+  proposal              String?
+  deliverablesConfirmed Json?
+  status                BidStatus          @default(SUBMITTED)
+  isShortlisted         Boolean            @default(false)
+  createdAt             DateTime           @default(now())
+  updatedAt             DateTime           @updatedAt
+
+  counterOffers CampaignCounterOffer[]
+  assignment    CampaignAssignment?
+
+  @@map("influencer_bids")
+}
+
+model CampaignCounterOffer {
+  id        String        @id @default(uuid())
+  bidId     String
+  bid       InfluencerBid @relation(fields: [bidId], references: [id])
+  senderId  String
+  amount    Decimal       @db.Decimal(10, 2)
+  message   String?
+  expiresAt DateTime
+  status    String        @default("pending") // pending | accepted | rejected | expired
+  createdAt DateTime      @default(now())
+
+  @@map("campaign_counter_offers")
+}
+
+model CampaignAssignment {
+  id                  String                @id @default(uuid())
+  campaignId          String
+  campaign            InfluencerCampaign    @relation(fields: [campaignId], references: [id])
+  bidId               String                @unique
+  bid                 InfluencerBid         @relation(fields: [bidId], references: [id])
+  shopkeeperId        String
+  influencerId        String
+  influencer          InfluencerProfile     @relation(fields: [influencerId], references: [id])
+  agreedAmount        Decimal               @db.Decimal(10, 2)
+  scheduledDate       DateTime
+  deliveryDate        DateTime
+  paymentStatus       CampaignPaymentStatus @default(NOT_CONFIRMED)
+  contentStatus       ContentStatus         @default(NOT_STARTED)
+  submittedContentUrl String?
+  proofImageUrl       String?
+  trackingCode        String                @unique @default(uuid())
+  publishedAt         DateTime?
+  caption             String?
+  notes               String?
+  status              String                @default("active")
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+
+  ratings       CampaignRating[]
+  performance   CampaignPerformance?
+  trackingLinks CampaignTrackingLink[]
+
+  @@map("campaign_assignments")
+}
+
+model CampaignRating {
+  id           String             @id @default(uuid())
+  assignmentId String
+  assignment   CampaignAssignment @relation(fields: [assignmentId], references: [id])
+  raterRole    String // shopkeeper | influencer
+  raterId      String
+  scores       Json
+  comment      String?
+  createdAt    DateTime           @default(now())
+
+  @@unique([assignmentId, raterRole])
+  @@map("campaign_ratings")
+}
+
+model CampaignPerformance {
+  id             String             @id @default(uuid())
+  assignmentId   String             @unique
+  assignment     CampaignAssignment @relation(fields: [assignmentId], references: [id])
+  views          Int                @default(0)
+  likes          Int                @default(0)
+  comments       Int                @default(0)
+  shares         Int                @default(0)
+  saves          Int                @default(0)
+  linkClicks     Int                @default(0)
+  productViews   Int                @default(0)
+  offerRequests  Int                @default(0)
+  reservations   Int                @default(0)
+  reportedVisits Int                @default(0)
+  lastSyncedAt   DateTime?
+  createdAt      DateTime           @default(now())
+
+  @@map("campaign_performance")
+}
+
+model CampaignTrackingLink {
+  id           String             @id @default(uuid())
+  code         String             @unique @default(uuid())
+  assignmentId String
+  assignment   CampaignAssignment @relation(fields: [assignmentId], references: [id])
+  productId    String?
+  shopId       String?
+  clickCount   Int                @default(0)
+  createdAt    DateTime           @default(now())
+
+  @@map("campaign_tracking_links")
+}
+
+// ─────────────────────────────────────────────
+// SUPPLIER & STOCK MODELS
+// ─────────────────────────────────────────────
+
+model Supplier {
+  id             String          @id @default(uuid())
+  shopId         String
+  shop           Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name           String
+  location       String
+  rating         Decimal         @default(0) @db.Decimal(2, 1)
+  ratingLabel    String?
+  deliveryTime   String?
+  qualityMatch   String?
+  email          String
+  phone          String?
+  isActive       Boolean         @default(true)
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  purchaseOrders PurchaseOrder[]
+
+  @@map("suppliers")
+}
+
+model PurchaseOrder {
+  id           String   @id @default(uuid())
+  supplierId   String
+  supplier     Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  shopId       String
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  poNumber     String   @unique
+  details      String
+  status       String   @default("Pending") // Pending | In Transit | Delivered | Cancelled
+  isDelivered  Boolean  @default(false)
+  expectedDate DateTime?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@map("purchase_orders")
+}
+
+model StockHistory {
+  id          String   @id @default(uuid())
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity    Int
+  reason      String   // RESTOCK | SALE | ADJUSTMENT | RETURN
+  note        String?
+  createdAt   DateTime @default(now())
+
+  @@map("stock_history")
+}
+
+// ─────────────────────────────────────────────
+// ADMIN MODELS
+// ─────────────────────────────────────────────
+
+model AuditLog {
+  id         String   @id @default(uuid())
+  actorId    String
+  actor      User     @relation(fields: [actorId], references: [id])
+  actorRole  String
+  action     String
+  entityType String
+  entityId   String
+  oldValue   Json?
+  newValue   Json?
+  ipAddress  String?
+  createdAt  DateTime @default(now())
+
+  @@map("audit_logs")
+}
+
+// ─────────────────────────────────────────────
+// MODERATION
+// ─────────────────────────────────────────────
+
+model ContentReport {
+  id         String         @id @default(uuid())
+  title      String
+  image      String?
+  productId  String?
+  product    Product?       @relation(fields: [productId], references: [id], onDelete: Cascade)
+  shopId     String?
+  shop       Shop?          @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  reporterId String
+  reporter   User           @relation(fields: [reporterId], references: [id], onDelete: Cascade)
+  reason     String
+  reports    Int            @default(1)
+  status     ReportStatus   @default(PENDING)
+  severity   ReportSeverity @default(LOW)
+  createdAt  DateTime       @default(now())
+  updatedAt  DateTime       @updatedAt
+
+  @@map("content_reports")
+}
+
+enum ReportStatus {
+  PENDING
+  UNDER_REVIEW
+  RESOLVED
+}
+
+enum ReportSeverity {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
