@@ -6,8 +6,9 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { ReservationStatus } from '@prisma/client';
+import { ReservationStatus, NotificationType } from '@prisma/client';
 import { JwtService } from '@nestjs/jwt';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class ReservationsService {
@@ -15,6 +16,7 @@ export class ReservationsService {
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
     private readonly config: ConfigService,
+    private readonly notificationsService: NotificationsService,
   ) {}
 
   async createReservation(
@@ -59,7 +61,7 @@ export class ReservationsService {
       },
       include: {
         product: { select: { id: true, name: true, images: true } },
-        shop: { select: { id: true, name: true, address: true, phone: true } },
+        shop: { select: { id: true, name: true, address: true, phone: true, ownerId: true } },
       },
     });
 
@@ -67,6 +69,16 @@ export class ReservationsService {
       where: { id: dto.productId },
       data: { reservationCount: { increment: 1 } },
     });
+
+    // Notify shop owner
+    this.notificationsService.sendNotification(
+      reservation.shop.ownerId,
+      NotificationType.RESERVATION_CREATED,
+      'New Product Reservation',
+      `A customer reserved ${dto.quantity ?? 1}x ${product.name}`,
+      { reservationId: reservation.id, productId: dto.productId }
+    );
+
     return { ...reservation, qrToken };
   }
 

@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateInfluencerProfileDto, CreateCampaignDto, SubmitBidDto } from './dto/influencer.dto';
-import { CampaignStatus, BidStatus, UserRole } from '@prisma/client';
+import { CampaignStatus, BidStatus, UserRole, NotificationType } from '@prisma/client';
+import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
 export class InfluencerService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private notificationsService: NotificationsService,
+  ) {}
 
   // ─── INFLUENCER PROFILE ──────────────────────────────────────────────────
 
@@ -67,7 +71,7 @@ export class InfluencerService {
       throw new BadRequestException('You already have an active bid for this campaign');
     }
 
-    return this.prisma.influencerBid.create({
+    const bid = await this.prisma.influencerBid.create({
       data: {
         campaignId,
         influencerId: profile.id,
@@ -77,6 +81,17 @@ export class InfluencerService {
         proposal: dto.proposal,
       },
     });
+
+    // Notify shop owner
+    this.notificationsService.sendNotification(
+      campaign.shopkeeperId,
+      NotificationType.BID_RECEIVED,
+      'New Campaign Bid',
+      `${profile.displayName} submitted a bid of ₹${dto.proposedAmount} for your campaign`,
+      { campaignId, bidId: bid.id }
+    );
+
+    return bid;
   }
 
   async getMyBids(userId: string) {
@@ -184,7 +199,7 @@ export class InfluencerService {
   async acceptBid(shopkeeperId: string, bidId: string) {
     const bid = await this.prisma.influencerBid.findUnique({
       where: { id: bidId },
-      include: { campaign: true },
+      include: { campaign: true, influencer: true },
     });
     if (!bid || bid.campaign.shopkeeperId !== shopkeeperId) {
       throw new NotFoundException('Bid not found');
@@ -205,9 +220,20 @@ export class InfluencerService {
     });
 
     // Update campaign
-    return this.prisma.influencerCampaign.update({
+    const updatedCampaign = await this.prisma.influencerCampaign.update({
       where: { id: bid.campaignId },
       data: { status: CampaignStatus.CREATOR_SELECTED },
     });
+
+    // Notify influencer
+    this.notificationsService.sendNotification(
+      bid.influencer.userId,
+      NotificationType.BID_ACCEPTED,
+      'Bid Accepted!',
+      `Your bid for campaign '${updatedCampaign.title}' was accepted!`,
+      { campaignId: bid.campaignId, bidId }
+    );
+
+    return updatedCampaign;
   }
 }

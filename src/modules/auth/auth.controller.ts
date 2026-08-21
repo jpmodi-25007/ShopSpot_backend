@@ -8,6 +8,7 @@ import {
   Req,
   HttpCode,
   HttpStatus,
+  Param,
 } from '@nestjs/common';
 import {
   ApiTags,
@@ -161,5 +162,33 @@ export class AuthController {
   @ApiOperation({ summary: 'API health check' })
   health() {
     return { status: 'ok', version: 'v1', timestamp: new Date().toISOString() };
+  }
+
+  // ─── LEGAL ────────────────────────────────────────────────────────────────
+
+  @Public()
+  @Get('auth/legal/:role')
+  @ApiOperation({ summary: 'Get legal documents for a specific role' })
+  getLegalDocs(@Param('role') role: string) {
+    try {
+      const fs = require('fs');
+      const path = require('path');
+      const settingsPath = path.join(process.cwd(), 'data', 'settings.json');
+      if (fs.existsSync(settingsPath)) {
+        const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
+        const legal = settings.legal || {};
+        const roleData = legal[role.toLowerCase()] || {};
+        return {
+          terms: roleData.terms || `# Terms of Service\n\nWelcome to ShopSpot. By using our services as a ${role}, you agree to our terms. *(Admin placeholder)*`,
+          privacy: roleData.privacy || `# Privacy Policy\n\nWe value your privacy as a ${role}. *(Admin placeholder)*`,
+        };
+      }
+    } catch (e) {
+      console.error('Failed to read settings', e);
+    }
+    return {
+      terms: `# Terms of Service\n\nWelcome to ShopSpot. By using our services as a ${role}, you agree to our terms. *(Admin placeholder)*`,
+      privacy: `# Privacy Policy\n\nWe value your privacy as a ${role}. *(Admin placeholder)*`,
+    };
   }
 }

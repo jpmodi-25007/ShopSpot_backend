@@ -1,8 +1,9 @@
-import { Controller, Get, Post, Param, Query, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Param, Query, UseGuards, Body } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth } from '@nestjs/swagger';
 import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
+import { RegisterDeviceDto } from './dto/device.dto';
 
 @ApiTags('Notifications')
 @UseGuards(JwtAuthGuard)
@@ -20,8 +21,26 @@ export class NotificationsController {
     return this.notificationsService.getMyNotifications(userId, +page, +limit);
   }
 
+  @Get('unread-count')
+  getUnreadCount(@CurrentUser('id') userId: string) {
+    return this.notificationsService.getUnreadCount(userId);
+  }
+
+  @Post('read-all')
+  readAll(@CurrentUser('id') userId: string) {
+    return this.notificationsService.markAllAsRead(userId);
+  }
+
   @Post(':id/read')
   read(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.notificationsService.markAsRead(id, userId);
+  }
+
+  @Post('devices')
+  registerDevice(
+    @CurrentUser('id') userId: string,
+    @Body() dto: RegisterDeviceDto,
+  ) {
+    return this.notificationsService.registerDevice(userId, dto);
   }
 }
