@@ -21,8 +21,7 @@ export class ProductsService {
   // ─── SHOPKEEPER OPS ───────────────────────────────────────────────────────
 
   async createProduct(ownerId: string, dto: CreateProductDto) {
-    const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
-    if (!shop) throw new ForbiddenException('Please register a shop first');
+    const shop = await this.getOrCreateShop(ownerId);
 
     if (dto.mrp !== undefined && dto.mrp !== null && Number(dto.sellingPrice) > Number(dto.mrp)) {
       throw new ForbiddenException('Selling price cannot be greater than MRP');
@@ -77,8 +76,7 @@ export class ProductsService {
   }
 
   async getMyProducts(ownerId: string, query: ProductQueryDto) {
-    const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
-    if (!shop) throw new ForbiddenException('No shop found');
+    const shop = await this.getOrCreateShop(ownerId);
 
     const { q, categoryId, stockStatus, page = 1, limit = 20 } = query;
 
@@ -342,9 +340,27 @@ export class ProductsService {
 
   // ─── HELPERS ──────────────────────────────────────────────────────────────
 
+  private async getOrCreateShop(ownerId: string) {
+    let shop = await this.prisma.shop.findUnique({ where: { ownerId } });
+    if (!shop) {
+      const user = await this.prisma.user.findUnique({ where: { id: ownerId } });
+      shop = await this.prisma.shop.create({
+        data: {
+          ownerId,
+          name: `${user?.name || 'Retailer'}'s Shop`,
+          slug: `shop-${ownerId.substring(0, 8)}-${Date.now()}`,
+          address: 'Please update your shop address',
+          latitude: 0,
+          longitude: 0,
+          status: 'ACTIVE',
+        },
+      });
+    }
+    return shop;
+  }
+
   private async assertOwnership(ownerId: string, productId: string) {
-    const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
-    if (!shop) throw new ForbiddenException('No shop found');
+    const shop = await this.getOrCreateShop(ownerId);
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
     });

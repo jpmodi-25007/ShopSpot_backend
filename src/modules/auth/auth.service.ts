@@ -60,8 +60,22 @@ export class AuthService {
         isEmailVerified: false,
       },
     });
-
     const tokens = await this.generateTokens(user);
+
+    if (user.role === 'SHOPKEEPER') {
+      await this.prisma.shop.create({
+        data: {
+          ownerId: user.id,
+          name: `${user.name || 'Retailer'}'s Shop`,
+          slug: `shop-${user.id.substring(0, 8)}-${Date.now()}`,
+          address: 'Please update your shop address',
+          latitude: 0,
+          longitude: 0,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
     return { user: this.sanitizeUser(user), tokens };
   }
 
@@ -80,6 +94,21 @@ export class AuthService {
     });
 
     const tokens = await this.generateTokens(user);
+
+    if (user.role === 'SHOPKEEPER') {
+      await this.prisma.shop.create({
+        data: {
+          ownerId: user.id,
+          name: `${user.name || 'Retailer'}'s Shop`,
+          slug: `shop-${user.id.substring(0, 8)}-${Date.now()}`,
+          address: 'Please update your shop address',
+          latitude: 0,
+          longitude: 0,
+          status: 'ACTIVE',
+        },
+      });
+    }
+
     return { user: this.sanitizeUser(user), tokens };
   }
 
