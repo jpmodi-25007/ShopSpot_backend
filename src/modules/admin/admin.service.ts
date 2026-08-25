@@ -138,7 +138,6 @@ export class AdminService {
         categoryId,
         sellingPrice: dto.sellingPrice,
         mrp: dto.sellingPrice,
-        images: dto.images || [],
       },
     });
 
@@ -433,7 +432,7 @@ export class AdminService {
           id: 'mock-2',
           type: 'SYSTEM',
           title: 'System Update Completed',
-          body: 'The ShopSpot backend has been successfully updated to v1.2.4.',
+          body: 'The Findivo backend has been successfully updated to v1.2.4.',
           isRead: true,
           createdAt: new Date(Date.now() - 24 * 3600000).toISOString()
         }

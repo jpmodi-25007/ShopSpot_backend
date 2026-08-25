@@ -117,7 +117,7 @@ export class CreateProductDto {
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsString({ each: true })
-  images?: string[];
+  @ApiPropertyOptional() @IsOptional() @IsString() brand?: string;
 }
 
 export class CreateInfluencerDto {

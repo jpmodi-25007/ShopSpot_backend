@@ -91,7 +91,6 @@ async function main() {
         mrp: 29990,
         sellingPrice: 24990,
         stockStatus: 'IN_STOCK',
-        images: ['https://images.unsplash.com/photo-1618366712010-f4ae9c647dcb?auto=format&fit=crop&q=80&w=1200'],
       },
     });
     console.log(`✅ Product created`);

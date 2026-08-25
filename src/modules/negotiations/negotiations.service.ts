@@ -38,7 +38,7 @@ export class NegotiationsService {
       },
       include: {
         product: {
-          select: { id: true, name: true, images: true, sellingPrice: true },
+          select: { id: true, name: true, mediaAssets: true, sellingPrice: true },
         },
         shop: { select: { id: true, name: true } },
       },
@@ -65,7 +65,7 @@ export class NegotiationsService {
       this.prisma.negotiation.findMany({
         where: { customerId },
         include: {
-          product: { select: { id: true, name: true, images: true } },
+          product: { select: { id: true, name: true, mediaAssets: true } },
           shop: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: 'desc' },
@@ -164,7 +164,7 @@ export class NegotiationsService {
       this.prisma.negotiation.findMany({
         where,
         include: {
-          product: { select: { id: true, name: true, images: true } },
+          product: { select: { id: true, name: true, mediaAssets: true } },
           messages: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
         orderBy: { createdAt: 'desc' },

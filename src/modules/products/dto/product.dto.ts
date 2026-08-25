@@ -12,12 +12,29 @@ import {
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
+export class MediaAssetDto {
+  @ApiProperty() @IsString() publicId: string;
+  @ApiProperty() @IsString() secureUrl: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() width?: number;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() height?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() format?: string;
+  @ApiPropertyOptional() @IsOptional() @IsNumber() bytes?: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() resourceType?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() folder?: string;
+}
+
 export class CreateProductDto {
   @ApiProperty() @IsString() @MaxLength(255) name: string;
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() categoryId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() brand?: string;
-  @ApiPropertyOptional() @IsOptional() @IsArray() @ArrayMaxSize(5) images?: string[];
+  
+  @ApiPropertyOptional({ type: [MediaAssetDto] }) 
+  @IsOptional() 
+  @IsArray() 
+  @Type(() => MediaAssetDto)
+  mediaAssets?: MediaAssetDto[];
+
   @ApiPropertyOptional()
   @IsOptional()
   @IsNumber()

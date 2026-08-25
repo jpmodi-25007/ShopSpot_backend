@@ -42,7 +42,6 @@ export class ProductsService {
         description: dto.description,
         categoryId: dto.categoryId,
         brand: dto.brand,
-        images: dto.images ?? [],
         mrp: dto.mrp,
         sellingPrice: dto.sellingPrice,
         stockQuantity: dto.stockQuantity ?? 0,
@@ -53,9 +52,25 @@ export class ProductsService {
         attributes: dto.attributes as any,
         variants: dto.variants as any,
         tags: dto.tags ?? [],
+        mediaAssets: {
+          create: dto.mediaAssets?.map((asset, index) => ({
+            publicId: asset.publicId,
+            secureUrl: asset.secureUrl,
+            width: asset.width,
+            height: asset.height,
+            format: asset.format,
+            bytes: asset.bytes,
+            resourceType: asset.resourceType || 'image',
+            folder: asset.folder,
+            entityType: 'PRODUCT',
+            isPrimary: index === 0,
+            position: index,
+          })) || [],
+        },
       },
       include: {
         category: true,
+        mediaAssets: true,
         shop: { select: { id: true, name: true, slug: true } },
       },
     });
@@ -75,7 +90,7 @@ export class ProductsService {
     const [data, total] = await this.prisma.$transaction([
       this.prisma.product.findMany({
         where,
-        include: { category: true },
+        include: { category: true, mediaAssets: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: +limit,
@@ -122,7 +137,6 @@ export class ProductsService {
         description: dto.description,
         categoryId: dto.categoryId,
         brand: dto.brand,
-        images: dto.images,
         mrp: dto.mrp,
         sellingPrice: dto.sellingPrice,
         stockQuantity: dto.stockQuantity,
@@ -169,6 +183,7 @@ export class ProductsService {
       where: { id: productId, isActive: true },
       include: {
         category: true,
+        mediaAssets: true,
         shop: {
           select: {
             id: true,
@@ -201,7 +216,7 @@ export class ProductsService {
   async getPriceComparison(productId: string, lat?: number, lng?: number) {
     const product = await this.prisma.product.findUnique({
       where: { id: productId },
-      include: { shop: true },
+      include: { shop: true, mediaAssets: true },
     });
     if (!product) throw new NotFoundException('Product not found');
 
@@ -217,6 +232,7 @@ export class ProductsService {
         categoryId: product.categoryId,
       },
       include: {
+        mediaAssets: true,
         shop: {
           select: {
             id: true,

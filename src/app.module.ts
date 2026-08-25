@@ -18,12 +18,14 @@ import { AnalyticsModule } from './modules/analytics/analytics.module';
 import { NotificationsModule } from './modules/notifications/notifications.module';
 import { InfluencerModule } from './modules/influencer/influencer.module';
 import { AdminModule } from './modules/admin/admin.module';
-import { UploadModule } from './modules/upload/upload.module';
+import { CloudinaryModule } from './modules/cloudinary/cloudinary.module';
 import { WebsocketModule } from './modules/websocket/websocket.module';
 import { SearchModule } from './modules/search/search.module';
 import { SavedModule } from './modules/saved/saved.module';
 import { AddressesModule } from './modules/addresses/addresses.module';
 import { RetailerInventoryModule } from './modules/retailer-inventory/retailer-inventory.module';
+import { PromotionsModule } from './promotions/promotions.module';
+import { EventsModule } from './events/events.module';
 
 @Module({
   imports: [
@@ -78,12 +80,14 @@ import { RetailerInventoryModule } from './modules/retailer-inventory/retailer-i
     NotificationsModule,
     InfluencerModule,
     AdminModule,
-    UploadModule,
+    CloudinaryModule,
     WebsocketModule,
     SearchModule,
     SavedModule,
     AddressesModule,
     RetailerInventoryModule,
+    PromotionsModule,
+    EventsModule,
   ],
 })
 export class AppModule {}

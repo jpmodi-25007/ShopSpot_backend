@@ -297,19 +297,21 @@ model Shop {
   createdAt             DateTime         @default(now())
   updatedAt             DateTime         @updatedAt
 
-  products        Product[]
-  negotiations    Negotiation[]        @relation("ShopNegotiations")
-  reservations    Reservation[]        @relation("ShopReservations")
-  orders          Order[]              @relation("ShopOrders")
-  reviews         Review[]
-  subscriptions   Subscription[]
-  savedByUsers    SavedShop[]
-  analyticsEvents AnalyticsEvent[]
-  offers          Offer[]
-  campaigns       InfluencerCampaign[]
-  ContentReport   ContentReport[]
-  suppliers       Supplier[]
-  purchaseOrders  PurchaseOrder[]
+  products         Product[]
+  negotiations     Negotiation[]        @relation("ShopNegotiations")
+  reservations     Reservation[]        @relation("ShopReservations")
+  orders           Order[]              @relation("ShopOrders")
+  reviews          Review[]
+  subscriptions    Subscription[]
+  savedByUsers     SavedShop[]
+  analyticsEvents  AnalyticsEvent[]
+  offers           Offer[]
+  campaigns        InfluencerCampaign[]
+  ContentReport    ContentReport[]
+  suppliers        Supplier[]
+  purchaseOrders   PurchaseOrder[]
+  promotionBanners PromotionBanner[]
+  events           Event[]
 
   @@map("shops")
 }
@@ -324,7 +326,6 @@ model Product {
   categoryId        String?
   category          Category?   @relation(fields: [categoryId], references: [id])
   brand             String?
-  images            String[]    @default([])
   mrp               Decimal?    @db.Decimal(10, 2)
   sellingPrice      Decimal     @db.Decimal(10, 2)
   currency          String      @default("INR")
@@ -346,16 +347,46 @@ model Product {
   createdAt         DateTime    @default(now())
   updatedAt         DateTime    @updatedAt
 
-  negotiations    Negotiation[]
-  reservations    Reservation[]
-  reviews         Review[]
-  savedByUsers    SavedProduct[]
-  analyticsEvents AnalyticsEvent[]
-  campaigns       InfluencerCampaign[]
-  reports         ContentReport[]
-  stockHistory    StockHistory[]
+  negotiations     Negotiation[]
+  reservations     Reservation[]
+  reviews          Review[]
+  savedByUsers     SavedProduct[]
+  analyticsEvents  AnalyticsEvent[]
+  campaigns        InfluencerCampaign[]
+  reports          ContentReport[]
+  stockHistory     StockHistory[]
+  mediaAssets      MediaAsset[]
+  promotionBanners PromotionBanner[]
 
   @@map("products")
+}
+
+model MediaAsset {
+  id           String  @id @default(uuid())
+  publicId     String  @unique
+  secureUrl    String
+  width        Int?
+  height       Int?
+  format       String?
+  bytes        Int?
+  resourceType String  @default("image")
+  folder       String?
+
+  entityType String // "PRODUCT", "SHOP", "USER", "CAMPAIGN"
+  entityId   String
+
+  isPrimary Boolean @default(false)
+  position  Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // For product relations specifically
+  product Product? @relation(fields: [entityId], references: [id], map: "media_product_fkey")
+
+  @@index([entityType, entityId])
+  @@index([publicId])
+  @@map("media_assets")
 }
 
 model Offer {
@@ -808,20 +839,20 @@ model CampaignTrackingLink {
 // ─────────────────────────────────────────────
 
 model Supplier {
-  id             String          @id @default(uuid())
-  shopId         String
-  shop           Shop            @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  name           String
-  location       String
-  rating         Decimal         @default(0) @db.Decimal(2, 1)
-  ratingLabel    String?
-  deliveryTime   String?
-  qualityMatch   String?
-  email          String
-  phone          String?
-  isActive       Boolean         @default(true)
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id           String   @id @default(uuid())
+  shopId       String
+  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  name         String
+  location     String
+  rating       Decimal  @default(0) @db.Decimal(2, 1)
+  ratingLabel  String?
+  deliveryTime String?
+  qualityMatch String?
+  email        String
+  phone        String?
+  isActive     Boolean  @default(true)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   purchaseOrders PurchaseOrder[]
 
@@ -829,30 +860,30 @@ model Supplier {
 }
 
 model PurchaseOrder {
-  id           String   @id @default(uuid())
+  id           String    @id @default(uuid())
   supplierId   String
-  supplier     Supplier @relation(fields: [supplierId], references: [id], onDelete: Cascade)
+  supplier     Supplier  @relation(fields: [supplierId], references: [id], onDelete: Cascade)
   shopId       String
-  shop         Shop     @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  poNumber     String   @unique
+  shop         Shop      @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  poNumber     String    @unique
   details      String
-  status       String   @default("Pending") // Pending | In Transit | Delivered | Cancelled
-  isDelivered  Boolean  @default(false)
+  status       String    @default("Pending") // Pending | In Transit | Delivered | Cancelled
+  isDelivered  Boolean   @default(false)
   expectedDate DateTime?
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@map("purchase_orders")
 }
 
 model StockHistory {
-  id          String   @id @default(uuid())
-  productId   String
-  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
-  quantity    Int
-  reason      String   // RESTOCK | SALE | ADJUSTMENT | RETURN
-  note        String?
-  createdAt   DateTime @default(now())
+  id        String   @id @default(uuid())
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  quantity  Int
+  reason    String // RESTOCK | SALE | ADJUSTMENT | RETURN
+  note      String?
+  createdAt DateTime @default(now())
 
   @@map("stock_history")
 }
@@ -912,4 +943,41 @@ enum ReportSeverity {
   MEDIUM
   HIGH
   CRITICAL
+}
+
+// ─────────────────────────────────────────────
+// PROMOTIONS & MARKETING
+// ─────────────────────────────────────────────
+
+model PromotionBanner {
+  id           String    @id @default(uuid())
+  imageUrl     String
+  title        String?
+  shopId       String?
+  shop         Shop?     @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  productId    String?
+  product      Product?  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  startDate    DateTime?
+  endDate      DateTime?
+  isActive     Boolean   @default(true)
+  displayOrder Int       @default(0)
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@map("promotion_banners")
+}
+
+model Event {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  imageUrl    String?
+  startDate   DateTime
+  endDate     DateTime
+  location    String?
+  isActive    Boolean  @default(true)
+  shopId      String?
+  shop        Shop?    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 }

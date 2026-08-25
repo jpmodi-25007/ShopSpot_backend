@@ -21,7 +21,7 @@ export class SearchService {
       this.prisma.product.findMany({
         where: { name: { contains: q, mode: 'insensitive' } },
         take: 10,
-        select: { id: true, name: true, sellingPrice: true, images: true, shopId: true },
+        select: { id: true, name: true, sellingPrice: true, mediaAssets: true, shopId: true },
       }),
       this.prisma.category.findMany({
         where: { name: { contains: q, mode: 'insensitive' } },

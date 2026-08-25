@@ -6,7 +6,8 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { ConfigService } from '@nestjs/config';
-import { ReservationStatus, NotificationType } from '@prisma/client';
+import { NotificationType, ReservationStatus } from '@prisma/client';
+import { NotificationFactory } from '../notifications/notification.factory';
 import { JwtService } from '@nestjs/jwt';
 import { NotificationsService } from '../notifications/notifications.service';
 
@@ -60,7 +61,7 @@ export class ReservationsService {
         status: ReservationStatus.ACTIVE,
       },
       include: {
-        product: { select: { id: true, name: true, images: true } },
+        product: { select: { id: true, name: true, mediaAssets: true } },
         shop: { select: { id: true, name: true, address: true, phone: true, ownerId: true } },
       },
     });
@@ -71,12 +72,14 @@ export class ReservationsService {
     });
 
     // Notify shop owner
+    const payload = NotificationFactory.reservationCreated(reservation.id, dto.productId);
+    
     this.notificationsService.sendNotification(
       reservation.shop.ownerId,
       NotificationType.RESERVATION_CREATED,
       'New Product Reservation',
       `A customer reserved ${dto.quantity ?? 1}x ${product.name}`,
-      { reservationId: reservation.id, productId: dto.productId }
+      payload
     );
 
     return { ...reservation, qrToken };
@@ -87,7 +90,7 @@ export class ReservationsService {
       this.prisma.reservation.findMany({
         where: { customerId },
         include: {
-          product: { select: { id: true, name: true, images: true } },
+          product: { select: { id: true, name: true, mediaAssets: true } },
           shop: { select: { id: true, name: true } },
         },
         orderBy: { createdAt: 'desc' },

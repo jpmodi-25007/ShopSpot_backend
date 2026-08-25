@@ -159,7 +159,7 @@ export class AuthService {
         // In a real app, save resetCode to DB with expiration!
 
         await transporter.sendMail({
-          from: `"ShopSpot Support" <${process.env.SMTP_EMAIL}>`,
+          from: `"Findivo Support" <${process.env.SMTP_EMAIL}>`,
           to: dto.emailOrPhone,
           subject: 'Password Reset Request',
           text: `Your password reset code is: ${resetCode}\nIf you did not request this, please ignore this email.`,

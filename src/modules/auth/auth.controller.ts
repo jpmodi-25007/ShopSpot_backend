@@ -179,7 +179,7 @@ export class AuthController {
         const legal = settings.legal || {};
         const roleData = legal[role.toLowerCase()] || {};
         return {
-          terms: roleData.terms || `# Terms of Service\n\nWelcome to ShopSpot. By using our services as a ${role}, you agree to our terms. *(Admin placeholder)*`,
+          terms: roleData.terms || `# Terms of Service\n\nWelcome to Findivo. By using our services as a ${role}, you agree to our terms. *(Admin placeholder)*`,
           privacy: roleData.privacy || `# Privacy Policy\n\nWe value your privacy as a ${role}. *(Admin placeholder)*`,
         };
       }
@@ -187,7 +187,7 @@ export class AuthController {
       console.error('Failed to read settings', e);
     }
     return {
-      terms: `# Terms of Service\n\nWelcome to ShopSpot. By using our services as a ${role}, you agree to our terms. *(Admin placeholder)*`,
+      terms: `# Terms of Service\n\nWelcome to Findivo. By using our services as a ${role}, you agree to our terms. *(Admin placeholder)*`,
       privacy: `# Privacy Policy\n\nWe value your privacy as a ${role}. *(Admin placeholder)*`,
     };
   }

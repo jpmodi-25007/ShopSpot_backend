@@ -53,7 +53,7 @@ describe('ProductsController', () => {
         description: 'Noise cancelling',
         basePrice: 200,
         currency: 'USD',
-        images: [],
+        mediaAssets: [],
         stockQuantity: 50,
         stockStatus: 'IN_STOCK' as any,
         isActive: true,

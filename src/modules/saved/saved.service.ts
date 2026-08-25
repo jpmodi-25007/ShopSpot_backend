@@ -16,7 +16,7 @@ export class SavedService {
 
     return this.prisma.savedProduct.create({
       data: { userId, productId },
-      include: { product: true },
+      include: { product: { include: { mediaAssets: true, shop: { select: { id: true, name: true, slug: true } } } } },
     });
   }
 

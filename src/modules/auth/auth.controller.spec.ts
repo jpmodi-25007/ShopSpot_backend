@@ -47,6 +47,7 @@ describe('AuthController', () => {
         email: 'test@example.com',
         password: 'Password123!',
         name: 'Test User',
+        role: 'CUSTOMER' as any,
       };
       const result = {
         user: {
@@ -81,6 +82,7 @@ describe('AuthController', () => {
       const loginDto = {
         email: 'test@example.com',
         password: 'Password123!',
+        role: 'CUSTOMER' as any,
       };
       const result = {
         user: {

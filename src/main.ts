@@ -62,7 +62,7 @@ async function bootstrap() {
   // Swagger docs
   if (configService.get('NODE_ENV') !== 'production') {
     const config = new DocumentBuilder()
-      .setTitle('ShopSpot API')
+      .setTitle('Findivo API')
       .setDescription(
         "India's Local Product Discovery & Advertising Platform — REST API",
       )
@@ -92,8 +92,8 @@ async function bootstrap() {
   }
 
   const port = configService.get<number>('PORT', 3001);
-  await app.listen(port);
-  console.log(`\n🚀 ShopSpot API running at: http://localhost:${port}/api/v1`);
+  await app.listen(port, '0.0.0.0');
+  console.log(`\n🚀 Findivo API running at: http://localhost:${port}/api/v1`);
   console.log(`📚 Swagger docs at: http://localhost:${port}/api/docs\n`);
 }
 
