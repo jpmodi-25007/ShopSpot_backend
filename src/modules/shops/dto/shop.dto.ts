@@ -28,6 +28,18 @@ export class CreateShopDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsString()
+  @IsUrl()
+  logoUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @IsUrl()
+  coverImageUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
   categoryId?: string;
 
   @ApiProperty({ example: 'Shop 12, SG Highway, Ahmedabad' })

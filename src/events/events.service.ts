@@ -26,6 +26,20 @@ export class EventsService {
     });
   }
 
+  async findShopEvents(shopId: string) {
+    return this.prisma.event.findMany({
+      where: {
+        shop: {
+          ownerId: shopId
+        }
+      },
+      orderBy: { createdAt: 'desc' },
+      include: {
+        shop: true,
+      },
+    });
+  }
+
   async findOne(id: string) {
     const event = await this.prisma.event.findUnique({
       where: { id },

@@ -25,13 +25,23 @@ export class AnalyticsService {
     });
     if (!shop) throw new NotFoundException('Shop not found');
 
-    // Aggregate some basic analytics
-    const [totalViews, activeOrders, totalRevenueData] = await Promise.all([
+    const now = new Date();
+    const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
+    const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
+
+    // Aggregate current period (last 7 days) and previous period (8-14 days ago)
+    const [totalViews, prevViews, activeOrders, prevOrders, totalRevenueData] = await Promise.all([
       this.prisma.analyticsEvent.count({
-        where: { shopId: shop.id, eventType: 'shop_view' },
+        where: { shopId: shop.id, eventType: 'shop_view', createdAt: { gte: sevenDaysAgo } },
+      }),
+      this.prisma.analyticsEvent.count({
+        where: { shopId: shop.id, eventType: 'shop_view', createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } },
       }),
       this.prisma.order.count({
         where: { shopId: shop.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } },
+      }),
+      this.prisma.order.count({
+        where: { shopId: shop.id, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } },
       }),
       this.prisma.order.aggregate({
         where: { shopId: shop.id, status: 'DELIVERED' },
@@ -39,10 +49,16 @@ export class AnalyticsService {
       }),
     ]);
 
+    // Calculate trend percentages
+    const viewsTrend = prevViews === 0 ? 0 : Math.round(((totalViews - prevViews) / prevViews) * 100);
+    const ordersTrend = prevOrders === 0 ? 0 : Math.round(((activeOrders - prevOrders) / prevOrders) * 100);
+
     return {
       totalViews,
       activeOrders,
       totalRevenue: totalRevenueData._sum.total || 0,
+      viewsTrend,
+      ordersTrend,
     };
   }
 

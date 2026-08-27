@@ -73,6 +73,8 @@ export class ShopsService {
       data: {
         name: dto.name?.trim(),
         description: dto.description,
+        logoUrl: dto.logoUrl,
+        coverImageUrl: dto.coverImageUrl,
         categoryId: dto.categoryId,
         address: dto.address,
         latitude: dto.latitude,

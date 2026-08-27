@@ -44,6 +44,16 @@ export class UpdateInfluencerProfileDto {
   instagramUrl?: string;
 
   @ApiPropertyOptional()
+  @IsUrl()
+  @IsOptional()
+  facebookUrl?: string;
+
+  @ApiPropertyOptional()
+  @IsUrl()
+  @IsOptional()
+  youtubeUrl?: string;
+
+  @ApiPropertyOptional()
   @IsNumber()
   @IsOptional()
   followers?: number;

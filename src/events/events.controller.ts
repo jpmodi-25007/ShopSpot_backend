@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req } from '@nestjs/common';
 import { EventsService } from './events.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -12,12 +12,24 @@ export class EventsController {
   @Post()
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.SHOPKEEPER)
-  async create(@Body() createEventDto: any) {
+  async create(@Req() req: any, @Body() createEventDto: any) {
     const data = await this.eventsService.create({
       ...createEventDto,
+      shopId: req.user.id,
       startDate: new Date(createEventDto.startDate),
       endDate: new Date(createEventDto.endDate),
     });
+    return {
+      status: 'success',
+      data,
+    };
+  }
+
+  @Get('shop')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.SHOPKEEPER)
+  async findShopEvents(@Req() req: any) {
+    const data = await this.eventsService.findShopEvents(req.user.id);
     return {
       status: 'success',
       data,

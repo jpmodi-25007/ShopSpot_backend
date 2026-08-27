@@ -1,4 +1,4 @@
-import { Controller, Get, Post, Put, Body, UseGuards, Param } from '@nestjs/common';
+import { Controller, Get, Post, Put, Patch, Body, UseGuards, Param, Query } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { InfluencerService } from '../influencer.service';
 import { UpdateInfluencerProfileDto, SubmitBidDto } from '../dto/influencer.dto';
@@ -36,8 +36,8 @@ export class InfluencerController {
 
   @Get('campaigns')
   @ApiOperation({ summary: 'Get eligible campaigns for influencer' })
-  getCampaigns(@CurrentUser('id') userId: string) {
-    return this.influencerService.getEligibleCampaigns(userId);
+  getCampaigns(@CurrentUser('id') userId: string, @Query('industry') industry?: string) {
+    return this.influencerService.getEligibleCampaigns(userId, industry);
   }
 
   @Get('bids')
@@ -54,5 +54,33 @@ export class InfluencerController {
     @Body() dto: SubmitBidDto,
   ) {
     return this.influencerService.submitBid(userId, campaignId, dto);
+  }
+
+  @Post('bids/:id/accept-counter')
+  @ApiOperation({ summary: 'Accept a counter offer' })
+  acceptCounterBid(@CurrentUser('id') userId: string, @Param('id') bidId: string) {
+    return this.influencerService.acceptCounterBid(userId, bidId);
+  }
+
+  @Post('bids/:id/reject-counter')
+  @ApiOperation({ summary: 'Reject a counter offer' })
+  rejectCounterBid(@CurrentUser('id') userId: string, @Param('id') bidId: string) {
+    return this.influencerService.rejectCounterBid(userId, bidId);
+  }
+
+  @Get('assignments')
+  @ApiOperation({ summary: 'Get my campaign assignments' })
+  getMyAssignments(@CurrentUser('id') userId: string) {
+    return this.influencerService.getMyAssignments(userId);
+  }
+
+  @Patch('assignments/:id/submit')
+  @ApiOperation({ summary: 'Submit campaign deliverables' })
+  submitDeliverable(
+    @CurrentUser('id') userId: string, 
+    @Param('id') assignmentId: string,
+    @Body('contentUrl') contentUrl: string
+  ) {
+    return this.influencerService.submitDeliverable(userId, assignmentId, contentUrl);
   }
 }

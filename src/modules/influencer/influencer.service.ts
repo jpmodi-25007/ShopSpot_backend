@@ -1,7 +1,7 @@
 import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { UpdateInfluencerProfileDto, CreateCampaignDto, SubmitBidDto } from './dto/influencer.dto';
-import { CampaignStatus, BidStatus, UserRole, NotificationType } from '@prisma/client';
+import { CampaignStatus, BidStatus, UserRole, NotificationType, ContentStatus, CampaignPaymentStatus } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -37,10 +37,17 @@ export class InfluencerService {
 
   // ─── CAMPAIGNS FOR INFLUENCER ────────────────────────────────────────────
 
-  async getEligibleCampaigns(userId: string) {
-    // Simplified: return published campaigns
+  async getEligibleCampaigns(userId: string, industry?: string) {
+    const whereClause: any = { status: CampaignStatus.PUBLISHED };
+    if (industry && industry !== 'All Campaigns') {
+      whereClause.OR = [
+        { targetCategories: { has: industry } },
+        { shop: { category: { name: industry } } }
+      ];
+    }
+    
     return this.prisma.influencerCampaign.findMany({
-      where: { status: CampaignStatus.PUBLISHED },
+      where: whereClause,
       include: { shop: true },
       orderBy: { createdAt: 'desc' },
     });
@@ -183,6 +190,34 @@ export class InfluencerService {
     });
   }
 
+  async updateCampaign(shopkeeperId: string, campaignId: string, dto: Partial<CreateCampaignDto>) {
+    const campaign = await this.prisma.influencerCampaign.findFirst({
+      where: { id: campaignId, shopkeeperId },
+    });
+    if (!campaign) throw new NotFoundException('Campaign not found');
+
+    return this.prisma.influencerCampaign.update({
+      where: { id: campaignId },
+      data: {
+        title: dto.title,
+        description: dto.description,
+        budgetMax: dto.budgetMax,
+        budgetMin: dto.budgetMin,
+      },
+    });
+  }
+
+  async deleteCampaign(shopkeeperId: string, campaignId: string) {
+    const campaign = await this.prisma.influencerCampaign.findFirst({
+      where: { id: campaignId, shopkeeperId },
+    });
+    if (!campaign) throw new NotFoundException('Campaign not found');
+
+    return this.prisma.influencerCampaign.delete({
+      where: { id: campaignId },
+    });
+  }
+
   async getCampaignBids(shopkeeperId: string, campaignId: string) {
     const campaign = await this.prisma.influencerCampaign.findFirst({
       where: { id: campaignId, shopkeeperId },
@@ -213,7 +248,7 @@ export class InfluencerService {
       throw new BadRequestException('Campaign is no longer accepting bids');
     }
 
-    // Accept bid
+    // Update bid
     await this.prisma.influencerBid.update({
       where: { id: bidId },
       data: { status: BidStatus.ACCEPTED },
@@ -223,6 +258,19 @@ export class InfluencerService {
     const updatedCampaign = await this.prisma.influencerCampaign.update({
       where: { id: bid.campaignId },
       data: { status: CampaignStatus.CREATOR_SELECTED },
+    });
+
+    // Create Campaign Assignment
+    await this.prisma.campaignAssignment.create({
+      data: {
+        campaignId: bid.campaignId,
+        bidId: bid.id,
+        shopkeeperId: bid.campaign.shopkeeperId,
+        influencerId: bid.influencerId,
+        agreedAmount: bid.proposedAmount,
+        scheduledDate: bid.availableDate ?? new Date(),
+        deliveryDate: bid.deliveryDate ?? new Date(),
+      },
     });
 
     // Notify influencer
@@ -235,5 +283,204 @@ export class InfluencerService {
     );
 
     return updatedCampaign;
+  }
+
+  async counterBid(shopkeeperId: string, bidId: string, counterAmount: number, message?: string) {
+    const bid = await this.prisma.influencerBid.findUnique({
+      where: { id: bidId },
+      include: { campaign: true, influencer: true },
+    });
+    if (!bid || bid.campaign.shopkeeperId !== shopkeeperId) {
+      throw new NotFoundException('Bid not found');
+    }
+
+    const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
+
+    // Create counter offer record
+    const counterOffer = await this.prisma.campaignCounterOffer.create({
+      data: {
+        bidId,
+        senderId: shopkeeperId,
+        amount: counterAmount,
+        message: message ?? null,
+        expiresAt,
+      },
+    });
+
+    // Update bid status to COUNTERED
+    await this.prisma.influencerBid.update({
+      where: { id: bidId },
+      data: { status: BidStatus.COUNTERED },
+    });
+
+    // Notify influencer
+    this.notificationsService.sendNotification(
+      bid.influencer.userId,
+      NotificationType.BID_COUNTERED,
+      'Counter Offer Received',
+      `The retailer made a counter offer of ₹${counterAmount} for your bid.`,
+      { campaignId: bid.campaignId, bidId }
+    );
+
+    return counterOffer;
+  }
+
+  // ─── INFLUENCER COUNTER BID RESPONSE ─────────────────────────────────────
+
+  async acceptCounterBid(userId: string, bidId: string) {
+    const profile = await this.getProfile(userId);
+    const bid = await this.prisma.influencerBid.findUnique({
+      where: { id: bidId, influencerId: profile.id },
+      include: { campaign: true, counterOffers: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    });
+
+    if (!bid || bid.status !== BidStatus.COUNTERED) {
+      throw new BadRequestException('Bid is not awaiting counter offer response');
+    }
+
+    const latestCounter = bid.counterOffers[0];
+    if (!latestCounter) {
+      throw new BadRequestException('No counter offer found');
+    }
+
+    // Accept bid
+    await this.prisma.influencerBid.update({
+      where: { id: bidId },
+      data: { status: BidStatus.ACCEPTED, proposedAmount: latestCounter.amount },
+    });
+
+    // Update campaign
+    const updatedCampaign = await this.prisma.influencerCampaign.update({
+      where: { id: bid.campaignId },
+      data: { status: CampaignStatus.CREATOR_SELECTED },
+    });
+
+    // Create Campaign Assignment
+    await this.prisma.campaignAssignment.create({
+      data: {
+        campaignId: bid.campaignId,
+        bidId: bid.id,
+        shopkeeperId: bid.campaign.shopkeeperId,
+        influencerId: bid.influencerId,
+        agreedAmount: latestCounter.amount,
+        scheduledDate: bid.availableDate ?? new Date(),
+        deliveryDate: bid.deliveryDate ?? new Date(),
+      },
+    });
+
+    // Notify retailer
+    this.notificationsService.sendNotification(
+      bid.campaign.shopkeeperId,
+      NotificationType.BID_ACCEPTED,
+      'Counter Offer Accepted!',
+      `The influencer accepted your counter offer for '${updatedCampaign.title}'.`,
+      { campaignId: bid.campaignId, bidId }
+    );
+
+    return updatedCampaign;
+  }
+
+  async rejectCounterBid(userId: string, bidId: string) {
+    const profile = await this.getProfile(userId);
+    const bid = await this.prisma.influencerBid.findUnique({
+      where: { id: bidId, influencerId: profile.id },
+      include: { campaign: true },
+    });
+
+    if (!bid || bid.status !== BidStatus.COUNTERED) {
+      throw new BadRequestException('Bid is not awaiting counter offer response');
+    }
+
+    await this.prisma.influencerBid.update({
+      where: { id: bidId },
+      data: { status: BidStatus.REJECTED },
+    });
+
+    this.notificationsService.sendNotification(
+      bid.campaign.shopkeeperId,
+      NotificationType.BID_RECEIVED,
+      'Counter Offer Rejected',
+      `The influencer rejected your counter offer.`,
+      { campaignId: bid.campaignId, bidId }
+    );
+
+    return { success: true };
+  }
+
+  // ─── FULFILLMENT & ASSIGNMENTS ──────────────────────────────────────────
+
+  async getMyAssignments(userId: string) {
+    const profile = await this.getProfile(userId);
+    return this.prisma.campaignAssignment.findMany({
+      where: { influencerId: profile.id },
+      include: { campaign: { include: { shop: true } } },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async submitDeliverable(userId: string, assignmentId: string, contentUrl: string) {
+    const profile = await this.getProfile(userId);
+    const assignment = await this.prisma.campaignAssignment.findUnique({
+      where: { id: assignmentId, influencerId: profile.id },
+      include: { campaign: true },
+    });
+
+    if (!assignment) throw new NotFoundException('Assignment not found');
+
+    const updated = await this.prisma.campaignAssignment.update({
+      where: { id: assignmentId },
+      data: {
+        submittedContentUrl: contentUrl,
+        contentStatus: ContentStatus.SUBMITTED,
+      },
+    });
+
+    this.notificationsService.sendNotification(
+      assignment.shopkeeperId,
+      NotificationType.SYSTEM, // Using SYSTEM type or a suitable one
+      'Deliverables Submitted',
+      `Influencer submitted their deliverables for '${assignment.campaign.title}'.`,
+      { assignmentId }
+    );
+
+    return updated;
+  }
+
+  async getShopkeeperAssignments(shopkeeperId: string) {
+    return this.prisma.campaignAssignment.findMany({
+      where: { shopkeeperId },
+      include: { influencer: { include: { user: { select: { avatarUrl: true } } } }, campaign: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  async releasePayment(shopkeeperId: string, assignmentId: string) {
+    const assignment = await this.prisma.campaignAssignment.findUnique({
+      where: { id: assignmentId, shopkeeperId },
+      include: { campaign: true, influencer: true },
+    });
+
+    if (!assignment) throw new NotFoundException('Assignment not found');
+    if (assignment.contentStatus !== ContentStatus.SUBMITTED && assignment.contentStatus !== ContentStatus.APPROVED && assignment.contentStatus !== ContentStatus.POSTED) {
+      throw new BadRequestException('Content must be submitted before payment');
+    }
+
+    const updated = await this.prisma.campaignAssignment.update({
+      where: { id: assignmentId },
+      data: {
+        paymentStatus: 'FULLY_PAID',
+        status: 'completed',
+      },
+    });
+
+    this.notificationsService.sendNotification(
+      assignment.influencer.userId,
+      NotificationType.SYSTEM,
+      'Payment Released!',
+      `Your payment of ₹${assignment.agreedAmount} for '${assignment.campaign.title}' has been released.`,
+      { assignmentId }
+    );
+
+    return updated;
   }
 }
