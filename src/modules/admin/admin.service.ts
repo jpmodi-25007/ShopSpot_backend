@@ -226,15 +226,37 @@ export class AdminService {
     const limit = parseInt(query.limit || '20', 10);
     const skip = (page - 1) * limit;
 
-    const [influencers, total] = await Promise.all([
-      this.prisma.influencerProfile.findMany({
+    const [users, total] = await Promise.all([
+      this.prisma.user.findMany({
         skip,
         take: limit,
-        include: { user: true },
+        where: { role: 'INFLUENCER' },
+        include: { influencerProfile: true },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.influencerProfile.count(),
+      this.prisma.user.count({ where: { role: 'INFLUENCER' } }),
     ]);
+
+    const influencers = users.map((u) => {
+      if (u.influencerProfile) {
+        return {
+          ...u.influencerProfile,
+          user: u,
+        };
+      } else {
+        return {
+          id: `temp_${u.id}`,
+          userId: u.id,
+          displayName: u.name || 'New Influencer',
+          username: `user_${u.id.substring(0, 8)}`,
+          verificationStatus: 'PENDING',
+          followers: 0,
+          socialPlatform: null,
+          createdAt: u.createdAt,
+          user: u,
+        };
+      }
+    });
 
     return {
       data: influencers,
