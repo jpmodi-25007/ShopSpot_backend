@@ -146,7 +146,7 @@ export class AdminService {
 
   async createUser(dto: any) {
     const defaultPassword = await bcrypt.hash('password123', 10);
-    return this.prisma.user.create({
+    const user = await this.prisma.user.create({
       data: {
         email: dto.email,
         name: dto.name,
@@ -156,6 +156,31 @@ export class AdminService {
         avatarUrl: dto.avatarUrl,
       },
     });
+
+    if (user.role === 'SHOPKEEPER') {
+      await this.prisma.shop.create({
+        data: {
+          ownerId: user.id,
+          name: `${user.name || 'Retailer'}'s Shop`,
+          slug: `shop-${user.id.substring(0, 8)}-${Date.now()}`,
+          address: 'Please update your shop address',
+          latitude: 0,
+          longitude: 0,
+          status: 'ACTIVE',
+        },
+      });
+    } else if (user.role === 'INFLUENCER') {
+      await this.prisma.influencerProfile.create({
+        data: {
+          userId: user.id,
+          displayName: user.name || 'New Influencer',
+          username: `user_${user.id.substring(0, 8)}_${Date.now()}`,
+          verificationStatus: 'PENDING',
+        },
+      });
+    }
+
+    return user;
   }
 
   async createInfluencer(dto: any) {

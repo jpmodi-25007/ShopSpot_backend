@@ -74,6 +74,15 @@ export class AuthService {
           status: 'ACTIVE',
         },
       });
+    } else if (user.role === 'INFLUENCER') {
+      await this.prisma.influencerProfile.create({
+        data: {
+          userId: user.id,
+          displayName: user.name || 'New Influencer',
+          username: `user_${user.id.substring(0, 8)}_${Date.now()}`,
+          verificationStatus: 'PENDING',
+        },
+      });
     }
 
     return { user: this.sanitizeUser(user), tokens };
@@ -105,6 +114,15 @@ export class AuthService {
           latitude: 0,
           longitude: 0,
           status: 'ACTIVE',
+        },
+      });
+    } else if (user.role === 'INFLUENCER') {
+      await this.prisma.influencerProfile.create({
+        data: {
+          userId: user.id,
+          displayName: user.name || 'New Influencer',
+          username: `user_${user.id.substring(0, 8)}_${Date.now()}`,
+          verificationStatus: 'PENDING',
         },
       });
     }
