@@ -293,13 +293,28 @@ export class AdminService {
   }
 
   async verifyInfluencer(influencerId: string, dto: VerifyInfluencerDto) {
+    if (influencerId.startsWith('temp_')) {
+      const userId = influencerId.replace('temp_', '');
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (!user) throw new NotFoundException('User not found');
+
+      return this.prisma.influencerProfile.create({
+        data: {
+          userId: user.id,
+          displayName: user.name || 'New Influencer',
+          username: `user_${user.id.substring(0, 8)}_${Date.now()}`,
+          verificationStatus: dto.status as any,
+        }
+      });
+    }
+
     const profile = await this.prisma.influencerProfile.findUnique({ where: { id: influencerId } });
     if (!profile) throw new NotFoundException('Influencer profile not found');
 
     return this.prisma.influencerProfile.update({
       where: { id: influencerId },
       data: {
-        verificationStatus: dto.status,
+        verificationStatus: dto.status as any,
       },
     });
   }
