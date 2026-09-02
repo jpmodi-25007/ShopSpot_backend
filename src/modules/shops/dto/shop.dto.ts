@@ -10,7 +10,7 @@ import {
   Max,
   MinLength,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 
 export class CreateShopDto {
@@ -104,7 +104,7 @@ export class CreateShopDto {
   >;
 }
 
-export class UpdateShopDto extends CreateShopDto {}
+export class UpdateShopDto extends PartialType(CreateShopDto) {}
 
 export class NearbyQueryDto {
   @ApiProperty() @IsNumber() @Type(() => Number) lat: number;

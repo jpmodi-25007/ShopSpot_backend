@@ -57,6 +57,10 @@ export class UpdateInfluencerProfileDto {
   @IsNumber()
   @IsOptional()
   followers?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  isActive?: boolean;
 }
 
 export class CreateCampaignDto {
@@ -118,6 +122,11 @@ export class CreateCampaignDto {
   @IsDateString()
   @IsOptional()
   applicationDeadline?: string;
+
+  @ApiPropertyOptional()
+  @IsDateString()
+  @IsOptional()
+  publishByDate?: string;
 }
 
 export class SubmitBidDto {

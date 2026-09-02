@@ -37,20 +37,68 @@ export class InfluencerService {
 
   // ─── CAMPAIGNS FOR INFLUENCER ────────────────────────────────────────────
 
-  async getEligibleCampaigns(userId: string, industry?: string) {
+  async getEligibleCampaigns(userId: string, industry?: string, search?: string) {
     const whereClause: any = { status: CampaignStatus.PUBLISHED };
+    const AND: any[] = [
+      {
+        OR: [
+          { applicationDeadline: null },
+          { applicationDeadline: { gt: new Date() } }
+        ]
+      }
+    ];
+
     if (industry && industry !== 'All Campaigns') {
-      whereClause.OR = [
-        { targetCategories: { has: industry } },
-        { shop: { category: { name: industry } } }
-      ];
+      AND.push({
+        OR: [
+          { targetCategories: { has: industry } },
+          { shop: { category: { name: industry } } }
+        ]
+      });
     }
-    
-    return this.prisma.influencerCampaign.findMany({
+
+    if (search && search.trim().length > 0) {
+      AND.push({
+        OR: [
+          { title: { contains: search, mode: 'insensitive' } },
+          { description: { contains: search, mode: 'insensitive' } },
+          { shop: { name: { contains: search, mode: 'insensitive' } } }
+        ]
+      });
+    }
+
+    if (AND.length > 0) {
+      whereClause.AND = AND;
+    }
+
+    // Determine the high budget threshold (top 10% of all published campaigns)
+    const totalPublished = await this.prisma.influencerCampaign.count({ where: { status: CampaignStatus.PUBLISHED } });
+    let highBudgetThreshold = Number.MAX_SAFE_INTEGER;
+
+    if (totalPublished > 0) {
+      // e.g. for 20 campaigns, 10% is 2. The 2nd item (index 1) sets the threshold.
+      const top10PercentIndex = Math.max(0, Math.ceil(totalPublished * 0.1) - 1);
+      const thresholdCampaign = await this.prisma.influencerCampaign.findFirst({
+        where: { status: CampaignStatus.PUBLISHED },
+        orderBy: { budgetMax: 'desc' },
+        skip: top10PercentIndex,
+        select: { budgetMax: true },
+      });
+      if (thresholdCampaign) {
+        highBudgetThreshold = Number(thresholdCampaign.budgetMax);
+      }
+    }
+
+    const campaigns = await this.prisma.influencerCampaign.findMany({
       where: whereClause,
       include: { shop: true },
       orderBy: { createdAt: 'desc' },
     });
+
+    return campaigns.map(c => ({
+      ...c,
+      isHighBudget: Number(c.budgetMax) >= highBudgetThreshold,
+    }));
   }
 
   async submitBid(userId: string, campaignId: string, dto: SubmitBidDto) {
@@ -62,6 +110,10 @@ export class InfluencerService {
     });
     if (!campaign || (campaign.status !== CampaignStatus.PUBLISHED && campaign.status !== CampaignStatus.BIDDING_OPEN)) {
       throw new BadRequestException('Campaign is not accepting bids');
+    }
+    
+    if (campaign.applicationDeadline && campaign.applicationDeadline < new Date()) {
+      throw new BadRequestException('The application deadline for this campaign has passed');
     }
 
     // Ensure no duplicate active bid
@@ -173,6 +225,7 @@ export class InfluencerService {
         city: dto.city,
         targetCategories: dto.targetCategories || [],
         applicationDeadline: dto.applicationDeadline ? new Date(dto.applicationDeadline) : null,
+        publishByDate: dto.publishByDate ? new Date(dto.publishByDate) : null,
         status: CampaignStatus.PUBLISHED,
       },
     });

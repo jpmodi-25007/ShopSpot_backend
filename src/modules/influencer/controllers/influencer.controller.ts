@@ -36,8 +36,12 @@ export class InfluencerController {
 
   @Get('campaigns')
   @ApiOperation({ summary: 'Get eligible campaigns for influencer' })
-  getCampaigns(@CurrentUser('id') userId: string, @Query('industry') industry?: string) {
-    return this.influencerService.getEligibleCampaigns(userId, industry);
+  getCampaigns(
+    @CurrentUser('id') userId: string, 
+    @Query('industry') industry?: string,
+    @Query('search') search?: string,
+  ) {
+    return this.influencerService.getEligibleCampaigns(userId, industry, search);
   }
 
   @Get('bids')

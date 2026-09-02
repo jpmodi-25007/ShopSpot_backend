@@ -488,6 +488,7 @@ model InfluencerCampaign {
   preferredStartDate  DateTime?
   preferredEndDate    DateTime?
   applicationDeadline DateTime?
+  publishByDate       DateTime?
   deliverables        Json?
   requirements        String?
   status              CampaignStatus       @default(DRAFT)

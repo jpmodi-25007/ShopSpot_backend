@@ -13,9 +13,8 @@ export class EventsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.SHOPKEEPER)
   async create(@Req() req: any, @Body() createEventDto: any) {
-    const data = await this.eventsService.create({
+    const data = await this.eventsService.create(req.user.id, {
       ...createEventDto,
-      shopId: req.user.id,
       startDate: new Date(createEventDto.startDate),
       endDate: new Date(createEventDto.endDate),
     });

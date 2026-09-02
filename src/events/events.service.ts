@@ -5,9 +5,17 @@ import { PrismaService } from '../prisma/prisma.service';
 export class EventsService {
   constructor(private prisma: PrismaService) {}
 
-  async create(data: any) {
+  async create(ownerId: string, data: any) {
+    const shop = await this.prisma.shop.findUnique({
+      where: { ownerId }
+    });
+    if (!shop) throw new NotFoundException('Shop not found');
+
     return this.prisma.event.create({
-      data,
+      data: {
+        ...data,
+        shopId: shop.id,
+      },
     });
   }
 
