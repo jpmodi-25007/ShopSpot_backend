@@ -91,7 +91,14 @@ export class InfluencerService {
 
     const campaigns = await this.prisma.influencerCampaign.findMany({
       where: whereClause,
-      include: { shop: true },
+      include: { 
+        shop: true,
+        product: {
+          include: {
+            mediaAssets: true
+          }
+        }
+      },
       orderBy: { createdAt: 'desc' },
     });
 
@@ -236,6 +243,12 @@ export class InfluencerService {
       where: { shopkeeperId },
       orderBy: { createdAt: 'desc' },
       include: {
+        shop: true,
+        product: {
+          include: {
+            mediaAssets: true
+          }
+        },
         _count: {
           select: { bids: true }
         }
