@@ -19,6 +19,7 @@ import {
   LoginMobileDto,
   UpdateProfileDto,
   ForgotPasswordDto,
+  ChangePasswordDto,
 } from './dto/auth.dto';
 
 export interface AuthTokens {
@@ -359,6 +360,22 @@ export class AuthService {
     });
 
     return { accessToken, refreshToken, expiresIn: 900 };
+  }
+
+  async changePassword(userId: string, dto: ChangePasswordDto) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const valid = await argon2.verify(user.password, dto.oldPassword);
+    if (!valid) throw new UnauthorizedException('Invalid old password');
+
+    const hashed = await argon2.hash(dto.newPassword);
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: { password: hashed },
+    });
+
+    return { message: 'Password changed successfully' };
   }
 
   private sanitizeUser(user: User): Partial<User> {

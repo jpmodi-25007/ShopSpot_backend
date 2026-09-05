@@ -112,3 +112,15 @@ export class ForgotPasswordDto {
   @IsString()
   emailOrPhone: string;
 }
+
+export class ChangePasswordDto {
+  @ApiProperty({ example: 'OldSecurePass@123' })
+  @IsString()
+  @MinLength(8)
+  oldPassword: string;
+
+  @ApiProperty({ example: 'NewSecurePass@123' })
+  @IsString()
+  @MinLength(8)
+  newPassword: string;
+}

@@ -26,6 +26,7 @@ import {
   RefreshTokenDto,
   UpdateProfileDto,
   ForgotPasswordDto,
+  ChangePasswordDto,
 } from './dto/auth.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
@@ -165,6 +166,18 @@ export class AuthController {
   }
 
   // ─── LEGAL ────────────────────────────────────────────────────────────────
+
+  @Post('auth/change-password')
+  @UseGuards(JwtAuthGuard)
+  @ApiBearerAuth('access-token')
+  @ApiOperation({ summary: 'Change password' })
+  @ApiResponse({ status: 200, description: 'Password changed successfully' })
+  changePassword(
+    @CurrentUser('id') userId: string,
+    @Body() dto: ChangePasswordDto,
+  ) {
+    return this.authService.changePassword(userId, dto);
+  }
 
   @Public()
   @Get('auth/legal/:role')

@@ -27,10 +27,10 @@ export class InfluencerService {
       where: { userId },
       update: dto,
       create: {
+        ...dto,
         userId,
         displayName: dto.displayName || 'Creator',
         username: dto.username || `creator_${Date.now()}`,
-        ...dto,
       },
     });
   }
@@ -164,7 +164,14 @@ export class InfluencerService {
     const profile = await this.getProfile(userId);
     return this.prisma.influencerBid.findMany({
       where: { influencerId: profile.id },
-      include: { campaign: true },
+      include: {
+        campaign: {
+          include: {
+            shop: true,
+            product: { include: { mediaAssets: true } },
+          },
+        },
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
