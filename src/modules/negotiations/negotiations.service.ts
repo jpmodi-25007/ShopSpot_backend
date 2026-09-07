@@ -165,6 +165,7 @@ export class NegotiationsService {
         where,
         include: {
           product: { select: { id: true, name: true, mediaAssets: true } },
+          customer: { select: { id: true, name: true, email: true, mobile: true } },
           messages: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
         orderBy: { createdAt: 'desc' },

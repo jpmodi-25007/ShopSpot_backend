@@ -30,7 +30,10 @@ export class AnalyticsService {
     const fourteenDaysAgo = new Date(now.getTime() - 14 * 24 * 60 * 60 * 1000);
 
     // Aggregate current period (last 7 days) and previous period (8-14 days ago)
-    const [totalViews, prevViews, activeOrders, prevOrders, totalRevenueData] = await Promise.all([
+    const [
+      totalViews, prevViews, activeOrders, prevOrders, totalRevenueData,
+      totalProducts, totalInquiries, ratingData, reviewCount,
+    ] = await Promise.all([
       this.prisma.analyticsEvent.count({
         where: { shopId: shop.id, eventType: 'shop_view', createdAt: { gte: sevenDaysAgo } },
       }),
@@ -47,11 +50,20 @@ export class AnalyticsService {
         where: { shopId: shop.id, status: 'DELIVERED' },
         _sum: { total: true },
       }),
+      // Profile stats
+      this.prisma.product.count({ where: { shopId: shop.id } }),
+      this.prisma.negotiation.count({ where: { shopId: shop.id } }),
+      this.prisma.review.aggregate({
+        where: { shopId: shop.id },
+        _avg: { rating: true },
+      }),
+      this.prisma.review.count({ where: { shopId: shop.id } }),
     ]);
 
     // Calculate trend percentages
     const viewsTrend = prevViews === 0 ? 0 : Math.round(((totalViews - prevViews) / prevViews) * 100);
     const ordersTrend = prevOrders === 0 ? 0 : Math.round(((activeOrders - prevOrders) / prevOrders) * 100);
+    const avgRating = ratingData._avg.rating ? Math.round((ratingData._avg.rating) * 10) / 10 : 0;
 
     return {
       totalViews,
@@ -59,6 +71,11 @@ export class AnalyticsService {
       totalRevenue: totalRevenueData._sum.total || 0,
       viewsTrend,
       ordersTrend,
+      // Profile stats
+      totalProducts,
+      totalInquiries,
+      avgRating,
+      reviewCount,
     };
   }
 
