@@ -41,6 +41,9 @@ model User {
   savedShops           SavedShop[]
   shop                 Shop?
   devices              UserDevice[]
+  chatRoomsA           ChatRoom[]         @relation("ParticipantA")
+  chatRoomsB           ChatRoom[]         @relation("ParticipantB")
+  chatMessages         ChatMessage[]
 
   @@map("users")
 }
@@ -261,6 +264,34 @@ model Message {
   sender        User        @relation(fields: [senderId], references: [id])
 
   @@map("messages")
+}
+
+model ChatRoom {
+  id           String        @id @default(uuid())
+  participantA String        
+  participantB String        
+  contextType  String?       // "CAMPAIGN", "SUPPORT", etc
+  contextId    String?
+  createdAt    DateTime      @default(now())
+  updatedAt    DateTime      @updatedAt
+  messages     ChatMessage[]
+  userA        User          @relation("ParticipantA", fields: [participantA], references: [id])
+  userB        User          @relation("ParticipantB", fields: [participantB], references: [id])
+
+  @@map("chat_rooms")
+}
+
+model ChatMessage {
+  id         String   @id @default(uuid())
+  roomId     String
+  senderId   String
+  content    String
+  isRead     Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  room       ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender     User     @relation(fields: [senderId], references: [id])
+
+  @@map("chat_messages")
 }
 
 model Reservation {

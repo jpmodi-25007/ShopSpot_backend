@@ -75,6 +75,15 @@ export class ReservationsController {
     return this.reservationsService.completeReservation(id, userId);
   }
 
+  @Post('shopkeeper/reservations/:id/cancel')
+  @Roles(UserRole.SHOPKEEPER, UserRole.ADMIN)
+  shopkeeperCancel(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+  ) {
+    return this.reservationsService.shopkeeperCancelReservation(id, userId);
+  }
+
   @Get('shopkeeper/reservations')
   @Roles(UserRole.SHOPKEEPER, UserRole.ADMIN)
   shopList(

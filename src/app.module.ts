@@ -26,6 +26,7 @@ import { AddressesModule } from './modules/addresses/addresses.module';
 import { RetailerInventoryModule } from './modules/retailer-inventory/retailer-inventory.module';
 import { PromotionsModule } from './promotions/promotions.module';
 import { EventsModule } from './events/events.module';
+import { ChatsModule } from './modules/chats/chats.module';
 
 @Module({
   imports: [
@@ -88,6 +89,7 @@ import { EventsModule } from './events/events.module';
     RetailerInventoryModule,
     PromotionsModule,
     EventsModule,
+    ChatsModule,
   ],
 })
 export class AppModule {}

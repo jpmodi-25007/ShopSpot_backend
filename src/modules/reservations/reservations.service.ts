@@ -113,6 +113,19 @@ export class ReservationsService {
     });
   }
 
+  async shopkeeperCancelReservation(id: string, ownerId: string) {
+    const res = await this.prisma.reservation.findUnique({ where: { id } });
+    if (!res) throw new NotFoundException();
+    const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
+    if (res.shopId !== shop?.id) throw new ForbiddenException('Not your reservation');
+    if (res.status !== ReservationStatus.ACTIVE)
+      throw new BadRequestException('Cannot cancel');
+    return this.prisma.reservation.update({
+      where: { id },
+      data: { status: ReservationStatus.CANCELLED },
+    });
+  }
+
   async verifyQr(ownerId: string, qrToken: string) {
     try {
       this.jwtService.verify(qrToken, {
