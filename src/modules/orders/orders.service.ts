@@ -11,7 +11,7 @@ export class OrdersService {
   async createOrder(customerId: string, dto: CreateOrderDto) {
     const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    return this.prisma.order.create({
+    const order = await this.prisma.order.create({
       data: {
         orderNumber,
         customerId,
@@ -28,6 +28,17 @@ export class OrdersService {
         idempotencyKey: uuidv4(),
       },
     });
+
+    for (const item of dto.items) {
+      if (item.productId && item.quantity) {
+        await this.prisma.product.update({
+          where: { id: item.productId },
+          data: { stockQuantity: { decrement: item.quantity } },
+        });
+      }
+    }
+
+    return order;
   }
 
   async getMyOrders(userId: string) {
@@ -60,9 +71,25 @@ export class OrdersService {
     if (!order) throw new NotFoundException('Order not found');
     if (order.shop.ownerId !== shopkeeperId) throw new ForbiddenException('Not your order');
 
-    return this.prisma.order.update({
+    const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: { status: dto.status },
     });
+
+    if (dto.status === OrderStatus.CANCELLED && order.status !== OrderStatus.CANCELLED) {
+      const items = order.items as any[];
+      if (items && Array.isArray(items)) {
+        for (const item of items) {
+          if (item.productId && item.quantity) {
+            await this.prisma.product.update({
+              where: { id: item.productId },
+              data: { stockQuantity: { increment: item.quantity } },
+            });
+          }
+        }
+      }
+    }
+
+    return updated;
   }
 }

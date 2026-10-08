@@ -11,10 +11,10 @@ import { Server, Socket } from 'socket.io';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
+import { ChatsService } from '../../chats/chats.service';
 
 @WebSocketGateway({
   cors: { origin: '*' },
-  namespace: '/ws',
 })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()
@@ -25,11 +25,12 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   constructor(
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
+    private readonly chatsService: ChatsService,
   ) {}
 
   async handleConnection(client: Socket) {
     try {
-      const authHeader = client.handshake.auth.token || client.handshake.headers.authorization;
+      const authHeader = client.handshake.auth.token || client.handshake.headers.authorization || client.handshake.query.token;
       if (!authHeader) throw new Error('No token provided');
 
       const token = authHeader.replace('Bearer ', '');
@@ -79,5 +80,24 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
       ...payload,
       shopkeeperId: client.data.userId,
     });
+  }
+
+  // --- Real-time Handlers for Chat ---
+  
+  @SubscribeMessage('sendMessage')
+  async handleSendMessage(@ConnectedSocket() client: Socket, @MessageBody() payload: { roomId: string, content: string }) {
+    try {
+      const userId = client.data.userId;
+      const message = await this.chatsService.sendMessage(userId, payload.roomId, payload.content);
+      const room = await this.chatsService.getRoomById(payload.roomId);
+      
+      if (room) {
+        // Broadcast to both participants
+        this.emitToUser(room.participantA, 'newMessage', message);
+        this.emitToUser(room.participantB, 'newMessage', message);
+      }
+    } catch (error) {
+      this.logger.error(`Error sending message: ${error.message}`);
+    }
   }
 }

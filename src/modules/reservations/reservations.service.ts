@@ -68,7 +68,10 @@ export class ReservationsService {
 
     await this.prisma.product.update({
       where: { id: dto.productId },
-      data: { reservationCount: { increment: 1 } },
+      data: { 
+        reservationCount: { increment: 1 },
+        stockQuantity: { decrement: dto.quantity ?? 1 },
+      },
     });
 
     // Notify shop owner
@@ -107,10 +110,15 @@ export class ReservationsService {
     if (!res || res.customerId !== customerId) throw new ForbiddenException();
     if (res.status !== ReservationStatus.ACTIVE)
       throw new BadRequestException('Cannot cancel');
-    return this.prisma.reservation.update({
+    const updated = await this.prisma.reservation.update({
       where: { id },
       data: { status: ReservationStatus.CANCELLED },
     });
+    await this.prisma.product.update({
+      where: { id: res.productId },
+      data: { stockQuantity: { increment: res.quantity } },
+    });
+    return updated;
   }
 
   async shopkeeperCancelReservation(id: string, ownerId: string) {
@@ -120,10 +128,15 @@ export class ReservationsService {
     if (res.shopId !== shop?.id) throw new ForbiddenException('Not your reservation');
     if (res.status !== ReservationStatus.ACTIVE)
       throw new BadRequestException('Cannot cancel');
-    return this.prisma.reservation.update({
+    const updated = await this.prisma.reservation.update({
       where: { id },
       data: { status: ReservationStatus.CANCELLED },
     });
+    await this.prisma.product.update({
+      where: { id: res.productId },
+      data: { stockQuantity: { increment: res.quantity } },
+    });
+    return updated;
   }
 
   async verifyQr(ownerId: string, qrToken: string) {

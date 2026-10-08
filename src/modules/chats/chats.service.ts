@@ -58,8 +58,12 @@ export class ChatsService {
     });
   }
 
+  async getRoomById(roomId: string) {
+    return this.prisma.chatRoom.findUnique({ where: { id: roomId } });
+  }
+
   async sendMessage(userId: string, roomId: string, content: string) {
-    const room = await this.prisma.chatRoom.findUnique({ where: { id: roomId } });
+    const room = await this.getRoomById(roomId);
     if (!room) throw new NotFoundException('Chat room not found');
     if (room.participantA !== userId && room.participantB !== userId) {
       throw new ForbiddenException('Not a participant of this chat room');
