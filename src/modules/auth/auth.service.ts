@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
+import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { User } from '@prisma/client';
 import * as argon2 from 'argon2';
@@ -402,5 +403,24 @@ export class AuthService {
   private normalizeMobile(mobile: string): string {
     const clean = mobile.replace(/\s+/g, '');
     return clean.startsWith('+') ? clean : `+91${clean}`;
+  }
+
+  // ─── CRON JOBS ──────────────────────────────────────────────────────────────
+
+  @Cron(CronExpression.EVERY_DAY_AT_MIDNIGHT)
+  async cleanupExpiredTokens() {
+    try {
+      const result = await this.prisma.refreshToken.deleteMany({
+        where: {
+          OR: [
+            { expiresAt: { lt: new Date() } },
+            { revokedAt: { not: null } },
+          ],
+        },
+      });
+      console.log(`Cleaned up ${result.count} expired or revoked refresh tokens.`);
+    } catch (error) {
+      console.error('Failed to cleanup refresh tokens', error);
+    }
   }
 }
