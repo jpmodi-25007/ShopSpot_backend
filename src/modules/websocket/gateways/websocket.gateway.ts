@@ -14,7 +14,23 @@ import { Logger } from '@nestjs/common';
 import { ChatsService } from '../../chats/chats.service';
 
 @WebSocketGateway({
-  cors: { origin: '*' },
+  cors: {
+    origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
+      // Allow requests with no origin (mobile apps, server-to-server)
+      if (!origin) return callback(null, true);
+      const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
+      if (
+        origin.endsWith('vercel.app') ||
+        origin.includes('localhost') ||
+        allowedOrigins.includes(origin)
+      ) {
+        callback(null, true);
+      } else {
+        callback(new Error('WebSocket origin not allowed by CORS'));
+      }
+    },
+    credentials: true,
+  },
 })
 export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   @WebSocketServer()

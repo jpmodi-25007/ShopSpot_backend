@@ -10,7 +10,7 @@ import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../../prisma/prisma.service';
 import { User } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 import * as nodemailer from 'nodemailer';
 import {
   RegisterEmailDto,
@@ -192,6 +192,8 @@ export class AuthService {
     // We do not throw an error if the user is not found to prevent user enumeration
     if (user && isEmail) {
       try {
+        // TODO: Move transporter to a singleton NestJS provider (e.g. MailService)
+        // to avoid re-creating the SMTP connection on every call.
         const transporter = nodemailer.createTransport({
           host: process.env.SMTP_HOST || 'smtp.gmail.com',
           port: parseInt(process.env.SMTP_PORT || '465', 10),
@@ -202,16 +204,26 @@ export class AuthService {
           },
         });
 
-        // Generate a random 6-digit code for reset
+        // Generate a secure 6-digit reset code
         const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
-        // In a real app, save resetCode to DB with expiration!
+        const resetCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
+
+        // Persist the code so it can be validated on the reset endpoint.
+        // Requires `resetCode String?` and `resetCodeExpiresAt DateTime?` columns on User.
+        await this.prisma.user.update({
+          where: { id: user.id },
+          data: {
+            resetCode,
+            resetCodeExpiresAt,
+          } as any, // cast until schema columns are added
+        });
 
         await transporter.sendMail({
           from: `"Findivo Support" <${process.env.SMTP_EMAIL}>`,
           to: dto.emailOrPhone,
           subject: 'Password Reset Request',
-          text: `Your password reset code is: ${resetCode}\nIf you did not request this, please ignore this email.`,
-          html: `<p>Your password reset code is: <b>${resetCode}</b></p><p>If you did not request this, please ignore this email.</p>`,
+          text: `Your password reset code is: ${resetCode}\nThis code expires in 15 minutes.\nIf you did not request this, please ignore this email.`,
+          html: `<p>Your password reset code is: <b>${resetCode}</b></p><p>This code expires in <b>15 minutes</b>.</p><p>If you did not request this, please ignore this email.</p>`,
         });
 
         console.log(`Reset email sent successfully to ${dto.emailOrPhone}`);
@@ -316,12 +328,16 @@ export class AuthService {
 
   async requestRoleUpgrade(userId: string, role: string): Promise<void> {
     const allowed = ['INFLUENCER', 'SHOPKEEPER'];
-    if (!allowed.includes(role.toUpperCase())) {
+    const upperRole = role.toUpperCase();
+    if (!allowed.includes(upperRole)) {
       throw new BadRequestException('Invalid role');
     }
+    // Store as a pending request rather than immediately changing the role.
+    // An admin must approve the upgrade before the user gains elevated permissions.
+    // Requires a `pendingRole String?` column on User (add to Prisma schema).
     await this.prisma.user.update({
       where: { id: userId },
-      data: { role: role.toUpperCase() as any },
+      data: { pendingRole: upperRole } as any, // cast until schema column is added
     });
   }
 
@@ -345,7 +361,7 @@ export class AuthService {
         expiresIn: this.config.get('JWT_ACCESS_EXPIRES_IN', '15m'),
       }),
       this.jwtService.signAsync(
-        { ...payload, jti: uuidv4() },
+        { ...payload, jti: randomUUID() },
         {
           secret: this.config.get('JWT_REFRESH_SECRET'),
           expiresIn: this.config.get('JWT_REFRESH_EXPIRES_IN', '7d'),

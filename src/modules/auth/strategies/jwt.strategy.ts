@@ -10,10 +10,17 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     private readonly config: ConfigService,
     private readonly authService: AuthService,
   ) {
+    const jwtSecret = config.get<string>('JWT_ACCESS_SECRET');
+    if (!jwtSecret) {
+      throw new Error(
+        'JWT_ACCESS_SECRET environment variable is not set. ' +
+        'The application cannot start without a secure JWT secret.',
+      );
+    }
     super({
       jwtFromRequest: ExtractJwt.fromAuthHeaderAsBearerToken(),
       ignoreExpiration: false,
-      secretOrKey: config.get<string>('JWT_ACCESS_SECRET') || 'secret',
+      secretOrKey: jwtSecret,
     });
   }
 

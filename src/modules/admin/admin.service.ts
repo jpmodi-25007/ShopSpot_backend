@@ -505,18 +505,20 @@ export class AdminService {
   }
 
   async markNotificationsRead() {
-    // Note: This marks all notifications as read.
+    // Only mark SYSTEM-type notifications as read (admin panel notifications)
     await this.prisma.notification.updateMany({
-      data: { isRead: true }
+      where: { type: 'SYSTEM' },
+      data: { isRead: true },
     });
     return { success: true };
   }
 
   async getSettings() {
+    // Use a fixed, absolute path — no inline require, no path traversal risk
+    const fs = await import('fs');
+    const path = await import('path');
+    const settingsPath = path.resolve(process.cwd(), 'data', 'settings.json');
     try {
-      const fs = require('fs');
-      const path = require('path');
-      const settingsPath = path.join(process.cwd(), 'data', 'settings.json');
       if (fs.existsSync(settingsPath)) {
         return JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
       }
@@ -535,14 +537,19 @@ export class AdminService {
   }
 
   async updateSettings(dto: any) {
+    const fs = await import('fs');
+    const path = await import('path');
+    // Use a fixed, absolute resolved path to prevent any path-traversal
+    const dataDir = path.resolve(process.cwd(), 'data');
+    const settingsPath = path.resolve(dataDir, 'settings.json');
+    // Ensure resolved path is still within the data directory
+    if (!settingsPath.startsWith(dataDir)) {
+      throw new Error('Invalid settings path');
+    }
     try {
-      const fs = require('fs');
-      const path = require('path');
-      const dataDir = path.join(process.cwd(), 'data');
       if (!fs.existsSync(dataDir)) {
         fs.mkdirSync(dataDir, { recursive: true });
       }
-      const settingsPath = path.join(dataDir, 'settings.json');
       fs.writeFileSync(settingsPath, JSON.stringify(dto, null, 2), 'utf8');
       return { success: true, settings: dto };
     } catch (e) {

@@ -1,8 +1,31 @@
 import { Controller, Get, Post, Body, Param, UseGuards } from '@nestjs/common';
+import { IsNotEmpty, IsOptional, IsString, MaxLength } from 'class-validator';
 import { ChatsService } from './chats.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { ThrottlerGuard } from '@nestjs/throttler';
+
+class CreateRoomDto {
+  @IsString()
+  @IsNotEmpty()
+  targetUserId: string;
+
+  @IsString()
+  @IsOptional()
+  contextType?: string;
+
+  @IsString()
+  @IsOptional()
+  contextId?: string;
+}
+
+class SendMessageDto {
+  @IsString()
+  @IsNotEmpty()
+  // Cap at 4000 chars to prevent DoS via oversized payloads hitting the DB
+  @MaxLength(4000)
+  content: string;
+}
 
 @Controller('chats')
 @UseGuards(JwtAuthGuard, ThrottlerGuard)
@@ -12,7 +35,7 @@ export class ChatsController {
   @Post('rooms')
   async createOrGetRoom(
     @CurrentUser('id') userId: string,
-    @Body() dto: { targetUserId: string; contextType?: string; contextId?: string },
+    @Body() dto: CreateRoomDto,
   ) {
     return this.chatsService.createOrGetRoom(userId, dto.targetUserId, dto.contextType, dto.contextId);
   }
@@ -31,7 +54,7 @@ export class ChatsController {
   async sendMessage(
     @CurrentUser('id') userId: string,
     @Param('roomId') roomId: string,
-    @Body() dto: { content: string },
+    @Body() dto: SendMessageDto,
   ) {
     return this.chatsService.sendMessage(userId, roomId, dto.content);
   }

@@ -47,9 +47,12 @@ export class AddressesService {
       });
     }
 
+    // Only update explicitly allowed fields — never forward the raw object
+    // to avoid mass-assignment of protected fields (userId, createdAt, etc.)
+    const { label, line1, line2, city, state, pincode, isDefault } = data;
     return this.prisma.address.update({
       where: { id: addressId },
-      data,
+      data: { label, line1, line2, city, state, pincode, isDefault },
     });
   }
 

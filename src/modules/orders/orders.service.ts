@@ -2,7 +2,7 @@ import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/commo
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { OrderStatus, PaymentStatus, DeliveryType } from '@prisma/client';
-import { v4 as uuidv4 } from 'uuid';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class OrdersService {
@@ -11,32 +11,45 @@ export class OrdersService {
   async createOrder(customerId: string, dto: CreateOrderDto) {
     const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    const order = await this.prisma.order.create({
-      data: {
-        orderNumber,
-        customerId,
-        shopId: dto.shopId,
-        items: dto.items,
-        subtotal: dto.subtotal,
-        deliveryCharge: dto.deliveryCharge || 0,
-        discount: dto.discount || 0,
-        total: dto.total,
-        deliveryAddress: dto.deliveryAddress,
-        deliveryType: dto.deliveryType || DeliveryType.STANDARD,
-        status: OrderStatus.PENDING,
-        paymentStatus: PaymentStatus.PENDING,
-        idempotencyKey: uuidv4(),
-      },
-    });
+    // Wrap order creation + stock updates in a single transaction to prevent
+    // race conditions that would allow stock to go negative under concurrent orders.
+    const order = await this.prisma.$transaction(async (tx) => {
+      const newOrder = await tx.order.create({
+        data: {
+          orderNumber,
+          customerId,
+          shopId: dto.shopId,
+          items: dto.items,
+          subtotal: dto.subtotal,
+          deliveryCharge: dto.deliveryCharge || 0,
+          discount: dto.discount || 0,
+          total: dto.total,
+          deliveryAddress: dto.deliveryAddress,
+          deliveryType: dto.deliveryType || DeliveryType.STANDARD,
+          status: OrderStatus.PENDING,
+          paymentStatus: PaymentStatus.PENDING,
+          idempotencyKey: randomUUID(),
+        },
+      });
 
-    for (const item of dto.items) {
-      if (item.productId && item.quantity) {
-        await this.prisma.product.update({
-          where: { id: item.productId },
-          data: { stockQuantity: { decrement: item.quantity } },
-        });
+      for (const item of dto.items) {
+        if (item.productId && item.quantity) {
+          // Fetch current stock to guard against going negative
+          const product = await tx.product.findUnique({
+            where: { id: item.productId },
+            select: { stockQuantity: true },
+          });
+          if (!product) continue;
+          const newQty = Math.max(0, product.stockQuantity - item.quantity);
+          await tx.product.update({
+            where: { id: item.productId },
+            data: { stockQuantity: newQty },
+          });
+        }
       }
-    }
+
+      return newOrder;
+    });
 
     return order;
   }

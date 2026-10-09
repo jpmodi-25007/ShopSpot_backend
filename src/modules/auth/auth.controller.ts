@@ -183,25 +183,28 @@ export class AuthController {
   @Get('auth/legal/:role')
   @ApiOperation({ summary: 'Get legal documents for a specific role' })
   getLegalDocs(@Param('role') role: string) {
+    // Sanitise the role param — only allow alphanumeric characters to
+    // prevent path-traversal attacks on the settings file read below.
+    const safeRole = role.toLowerCase().replace(/[^a-z0-9]/g, '');
     try {
       const fs = require('fs');
       const path = require('path');
-      const settingsPath = path.join(process.cwd(), 'data', 'settings.json');
+      const settingsPath = path.resolve(process.cwd(), 'data', 'settings.json');
       if (fs.existsSync(settingsPath)) {
         const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));
         const legal = settings.legal || {};
-        const roleData = legal[role.toLowerCase()] || {};
+        const roleData = legal[safeRole] || {};
         return {
-          terms: roleData.terms || `# Terms of Service\n\nWelcome to Findivo. By using our services as a ${role}, you agree to our terms. *(Admin placeholder)*`,
-          privacy: roleData.privacy || `# Privacy Policy\n\nWe value your privacy as a ${role}. *(Admin placeholder)*`,
+          terms: roleData.terms || `# Terms of Service\n\nWelcome to Findivo. By using our services as a ${safeRole}, you agree to our terms. *(Admin placeholder)*`,
+          privacy: roleData.privacy || `# Privacy Policy\n\nWe value your privacy as a ${safeRole}. *(Admin placeholder)*`,
         };
       }
     } catch (e) {
       console.error('Failed to read settings', e);
     }
     return {
-      terms: `# Terms of Service\n\nWelcome to Findivo. By using our services as a ${role}, you agree to our terms. *(Admin placeholder)*`,
-      privacy: `# Privacy Policy\n\nWe value your privacy as a ${role}. *(Admin placeholder)*`,
+      terms: `# Terms of Service\n\nWelcome to Findivo. By using our services as a ${safeRole}, you agree to our terms. *(Admin placeholder)*`,
+      privacy: `# Privacy Policy\n\nWe value your privacy as a ${safeRole}. *(Admin placeholder)*`,
     };
   }
 }
