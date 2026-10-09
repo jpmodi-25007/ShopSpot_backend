@@ -48,30 +48,46 @@ export class ReservationsService {
       expiresIn: '2h',
     });
 
-    const reservation = await this.prisma.reservation.create({
-      data: {
-        productId: dto.productId,
-        shopId: product.shopId,
-        customerId,
-        reservedPrice: dto.reservedPrice,
-        quantity: dto.quantity ?? 1,
-        negotiationId: dto.negotiationId,
-        qrToken,
-        expiresAt,
-        status: ReservationStatus.ACTIVE,
-      },
-      include: {
-        product: { select: { id: true, name: true, mediaAssets: true } },
-        shop: { select: { id: true, name: true, address: true, phone: true, ownerId: true } },
-      },
-    });
+    // Use a transaction to prevent race conditions and negative stock
+    const [reservation] = await this.prisma.$transaction(async (tx) => {
+      // Re-fetch product within transaction to ensure stock is still available
+      const currentProduct = await tx.product.findUnique({
+        where: { id: dto.productId },
+      });
+      if (!currentProduct || !currentProduct.isActive) {
+        throw new NotFoundException('Product not found');
+      }
+      if (currentProduct.stockQuantity < (dto.quantity ?? 1)) {
+        throw new BadRequestException('Insufficient stock');
+      }
 
-    await this.prisma.product.update({
-      where: { id: dto.productId },
-      data: { 
-        reservationCount: { increment: 1 },
-        stockQuantity: { decrement: dto.quantity ?? 1 },
-      },
+      const res = await tx.reservation.create({
+        data: {
+          productId: dto.productId,
+          shopId: product.shopId,
+          customerId,
+          reservedPrice: dto.reservedPrice,
+          quantity: dto.quantity ?? 1,
+          negotiationId: dto.negotiationId,
+          qrToken,
+          expiresAt,
+          status: ReservationStatus.ACTIVE,
+        },
+        include: {
+          product: { select: { id: true, name: true, mediaAssets: true } },
+          shop: { select: { id: true, name: true, address: true, phone: true, ownerId: true } },
+        },
+      });
+
+      await tx.product.update({
+        where: { id: dto.productId },
+        data: { 
+          reservationCount: { increment: 1 },
+          stockQuantity: { decrement: dto.quantity ?? 1 },
+        },
+      });
+
+      return [res];
     });
 
     // Notify shop owner
@@ -106,37 +122,47 @@ export class ReservationsService {
   }
 
   async cancelReservation(id: string, customerId: string) {
-    const res = await this.prisma.reservation.findUnique({ where: { id } });
-    if (!res || res.customerId !== customerId) throw new ForbiddenException();
-    if (res.status !== ReservationStatus.ACTIVE)
-      throw new BadRequestException('Cannot cancel');
-    const updated = await this.prisma.reservation.update({
-      where: { id },
-      data: { status: ReservationStatus.CANCELLED },
+    return this.prisma.$transaction(async (tx) => {
+      const res = await tx.reservation.findUnique({ where: { id } });
+      if (!res || res.customerId !== customerId) throw new ForbiddenException();
+      if (res.status !== ReservationStatus.ACTIVE)
+        throw new BadRequestException('Cannot cancel');
+        
+      const updated = await tx.reservation.update({
+        where: { id },
+        data: { status: ReservationStatus.CANCELLED },
+      });
+      
+      await tx.product.update({
+        where: { id: res.productId },
+        data: { stockQuantity: { increment: res.quantity } },
+      });
+      
+      return updated;
     });
-    await this.prisma.product.update({
-      where: { id: res.productId },
-      data: { stockQuantity: { increment: res.quantity } },
-    });
-    return updated;
   }
 
   async shopkeeperCancelReservation(id: string, ownerId: string) {
-    const res = await this.prisma.reservation.findUnique({ where: { id } });
-    if (!res) throw new NotFoundException();
-    const shop = await this.prisma.shop.findUnique({ where: { ownerId } });
-    if (res.shopId !== shop?.id) throw new ForbiddenException('Not your reservation');
-    if (res.status !== ReservationStatus.ACTIVE)
-      throw new BadRequestException('Cannot cancel');
-    const updated = await this.prisma.reservation.update({
-      where: { id },
-      data: { status: ReservationStatus.CANCELLED },
+    return this.prisma.$transaction(async (tx) => {
+      const res = await tx.reservation.findUnique({ where: { id } });
+      if (!res) throw new NotFoundException();
+      const shop = await tx.shop.findUnique({ where: { ownerId } });
+      if (res.shopId !== shop?.id) throw new ForbiddenException('Not your reservation');
+      if (res.status !== ReservationStatus.ACTIVE)
+        throw new BadRequestException('Cannot cancel');
+        
+      const updated = await tx.reservation.update({
+        where: { id },
+        data: { status: ReservationStatus.CANCELLED },
+      });
+      
+      await tx.product.update({
+        where: { id: res.productId },
+        data: { stockQuantity: { increment: res.quantity } },
+      });
+      
+      return updated;
     });
-    await this.prisma.product.update({
-      where: { id: res.productId },
-      data: { stockQuantity: { increment: res.quantity } },
-    });
-    return updated;
   }
 
   async verifyQr(ownerId: string, qrToken: string) {
