@@ -86,22 +86,34 @@ export class NotificationsService {
     });
 
     if (devices.length === 0) {
-      this.logger.debug(`No devices found for user ${userId}. Notification saved to DB only.`);
+      this.logger.debug(
+        `No devices found for user ${userId}. Notification saved to DB only.`,
+      );
       return notification;
     }
 
     // 3. Send FCM push
-    const tokens = devices.map(d => d.fcmToken);
+    const tokens = devices.map((d) => d.fcmToken);
     const stringifiedData = data ? this.stringifyData(data) : {};
-    
+
     // Pass notification ID to the mobile app for deep linking / read status
     stringifiedData['notificationId'] = notification.id;
     stringifiedData['type'] = type;
 
     if (tokens.length === 1) {
-      await this.firebaseProvider.sendToDevice(tokens[0], title, body, stringifiedData);
+      await this.firebaseProvider.sendToDevice(
+        tokens[0],
+        title,
+        body,
+        stringifiedData,
+      );
     } else {
-      await this.firebaseProvider.sendToMultipleDevices(tokens, title, body, stringifiedData);
+      await this.firebaseProvider.sendToMultipleDevices(
+        tokens,
+        title,
+        body,
+        stringifiedData,
+      );
     }
 
     return notification;

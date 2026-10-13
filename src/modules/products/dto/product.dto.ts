@@ -28,10 +28,10 @@ export class CreateProductDto {
   @ApiPropertyOptional() @IsOptional() @IsString() description?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() categoryId?: string;
   @ApiPropertyOptional() @IsOptional() @IsString() brand?: string;
-  
-  @ApiPropertyOptional({ type: [MediaAssetDto] }) 
-  @IsOptional() 
-  @IsArray() 
+
+  @ApiPropertyOptional({ type: [MediaAssetDto] })
+  @IsOptional()
+  @IsArray()
   @Type(() => MediaAssetDto)
   mediaAssets?: MediaAssetDto[];
 
@@ -64,6 +64,8 @@ export class UpdateProductDto extends CreateProductDto {}
 
 export class UpdateStockDto {
   @ApiProperty() @IsNumber() @Min(0) @Type(() => Number) quantity: number;
+  @ApiPropertyOptional() @IsOptional() @IsString() reason?: string;
+  @ApiPropertyOptional() @IsOptional() @IsString() note?: string;
 }
 
 export class ProductQueryDto {

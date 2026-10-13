@@ -1,4 +1,11 @@
-import { IsString, IsBoolean, IsOptional, IsEnum, IsNumber, Min } from 'class-validator';
+import {
+  IsString,
+  IsBoolean,
+  IsOptional,
+  IsEnum,
+  IsNumber,
+  Min,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { VerificationStatus, UserRole, ReportStatus } from '@prisma/client';
 
@@ -117,7 +124,10 @@ export class CreateProductDto {
   @ApiPropertyOptional({ type: [String] })
   @IsOptional()
   @IsString({ each: true })
-  @ApiPropertyOptional() @IsOptional() @IsString() brand?: string;
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  brand?: string;
 }
 
 export class CreateInfluencerDto {

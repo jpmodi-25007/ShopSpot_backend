@@ -1,6 +1,10 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { initializeApp, cert } from 'firebase-admin/app';
-import { getMessaging, Message, MulticastMessage } from 'firebase-admin/messaging';
+import {
+  getMessaging,
+  Message,
+  MulticastMessage,
+} from 'firebase-admin/messaging';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -15,7 +19,10 @@ export class FirebaseMessagingProvider {
 
   private initializeFirebase() {
     try {
-      const serviceAccountPath = path.resolve(process.cwd(), 'service-account.json');
+      const serviceAccountPath = path.resolve(
+        process.cwd(),
+        'service-account.json',
+      );
       if (fs.existsSync(serviceAccountPath)) {
         initializeApp({
           credential: cert(serviceAccountPath),
@@ -23,16 +30,27 @@ export class FirebaseMessagingProvider {
         this.isInitialized = true;
         this.logger.log('Firebase Admin SDK initialized successfully.');
       } else {
-        this.logger.warn('service-account.json not found. Firebase Admin SDK will not initialize. Push notifications will fail silently.');
+        this.logger.warn(
+          'service-account.json not found. Firebase Admin SDK will not initialize. Push notifications will fail silently.',
+        );
       }
     } catch (error) {
-      this.logger.error(`Failed to initialize Firebase Admin SDK: ${error.message}`);
+      this.logger.error(
+        `Failed to initialize Firebase Admin SDK: ${error.message}`,
+      );
     }
   }
 
-  async sendToDevice(token: string, title: string, body: string, data?: Record<string, string>) {
+  async sendToDevice(
+    token: string,
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+  ) {
     if (!this.isInitialized) {
-      this.logger.warn('Cannot send push notification. Firebase is not initialized.');
+      this.logger.warn(
+        'Cannot send push notification. Firebase is not initialized.',
+      );
       return false;
     }
 
@@ -55,7 +73,12 @@ export class FirebaseMessagingProvider {
     }
   }
 
-  async sendToMultipleDevices(tokens: string[], title: string, body: string, data?: Record<string, string>) {
+  async sendToMultipleDevices(
+    tokens: string[],
+    title: string,
+    body: string,
+    data?: Record<string, string>,
+  ) {
     if (!this.isInitialized || tokens.length === 0) {
       return false;
     }
@@ -71,7 +94,9 @@ export class FirebaseMessagingProvider {
       };
 
       const response = await getMessaging().sendEachForMulticast(payload);
-      this.logger.log(`Successfully sent multicast message. Success count: ${response.successCount}, Failure count: ${response.failureCount}`);
+      this.logger.log(
+        `Successfully sent multicast message. Success count: ${response.successCount}, Failure count: ${response.failureCount}`,
+      );
       return true;
     } catch (error) {
       this.logger.error(`Error sending multicast message: ${error.message}`);

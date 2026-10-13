@@ -1,11 +1,20 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class ChatsService {
   constructor(private prisma: PrismaService) {}
 
-  async createOrGetRoom(userId: string, targetUserId: string, contextType?: string, contextId?: string) {
+  async createOrGetRoom(
+    userId: string,
+    targetUserId: string,
+    contextType?: string,
+    contextId?: string,
+  ) {
     let room = await this.prisma.chatRoom.findFirst({
       where: {
         OR: [
@@ -16,9 +25,13 @@ export class ChatsService {
         contextId: contextId || null,
       },
       include: {
-        userA: { select: { id: true, name: true, avatarUrl: true, role: true } },
-        userB: { select: { id: true, name: true, avatarUrl: true, role: true } },
-      }
+        userA: {
+          select: { id: true, name: true, avatarUrl: true, role: true },
+        },
+        userB: {
+          select: { id: true, name: true, avatarUrl: true, role: true },
+        },
+      },
     });
 
     if (!room) {
@@ -30,9 +43,13 @@ export class ChatsService {
           contextId,
         },
         include: {
-          userA: { select: { id: true, name: true, avatarUrl: true, role: true } },
-          userB: { select: { id: true, name: true, avatarUrl: true, role: true } },
-        }
+          userA: {
+            select: { id: true, name: true, avatarUrl: true, role: true },
+          },
+          userB: {
+            select: { id: true, name: true, avatarUrl: true, role: true },
+          },
+        },
       });
     }
     return room;
@@ -41,18 +58,19 @@ export class ChatsService {
   async getMyRooms(userId: string) {
     return this.prisma.chatRoom.findMany({
       where: {
-        OR: [
-          { participantA: userId },
-          { participantB: userId },
-        ]
+        OR: [{ participantA: userId }, { participantB: userId }],
       },
       include: {
-        userA: { select: { id: true, name: true, avatarUrl: true, role: true } },
-        userB: { select: { id: true, name: true, avatarUrl: true, role: true } },
+        userA: {
+          select: { id: true, name: true, avatarUrl: true, role: true },
+        },
+        userB: {
+          select: { id: true, name: true, avatarUrl: true, role: true },
+        },
         messages: {
           orderBy: { createdAt: 'desc' },
           take: 1,
-        }
+        },
       },
       orderBy: { updatedAt: 'desc' },
     });
@@ -86,7 +104,9 @@ export class ChatsService {
   }
 
   async getMessages(userId: string, roomId: string) {
-    const room = await this.prisma.chatRoom.findUnique({ where: { id: roomId } });
+    const room = await this.prisma.chatRoom.findUnique({
+      where: { id: roomId },
+    });
     if (!room) throw new NotFoundException('Chat room not found');
     if (room.participantA !== userId && room.participantB !== userId) {
       throw new ForbiddenException('Not a participant of this chat room');

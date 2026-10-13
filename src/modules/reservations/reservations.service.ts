@@ -75,15 +75,32 @@ export class ReservationsService {
         },
         include: {
           product: { select: { id: true, name: true, mediaAssets: true } },
-          shop: { select: { id: true, name: true, address: true, phone: true, ownerId: true } },
+          shop: {
+            select: {
+              id: true,
+              name: true,
+              address: true,
+              phone: true,
+              ownerId: true,
+            },
+          },
         },
       });
 
       await tx.product.update({
         where: { id: dto.productId },
-        data: { 
+        data: {
           reservationCount: { increment: 1 },
           stockQuantity: { decrement: dto.quantity ?? 1 },
+        },
+      });
+
+      await tx.stockHistory.create({
+        data: {
+          productId: dto.productId,
+          quantity: -(dto.quantity ?? 1),
+          reason: 'SALE',
+          note: `Reserved by customer`,
         },
       });
 
@@ -91,14 +108,17 @@ export class ReservationsService {
     });
 
     // Notify shop owner
-    const payload = NotificationFactory.reservationCreated(reservation.id, dto.productId);
-    
+    const payload = NotificationFactory.reservationCreated(
+      reservation.id,
+      dto.productId,
+    );
+
     this.notificationsService.sendNotification(
       reservation.shop.ownerId,
       NotificationType.RESERVATION_CREATED,
       'New Product Reservation',
       `A customer reserved ${dto.quantity ?? 1}x ${product.name}`,
-      payload
+      payload,
     );
 
     return { ...reservation, qrToken };
@@ -127,17 +147,26 @@ export class ReservationsService {
       if (!res || res.customerId !== customerId) throw new ForbiddenException();
       if (res.status !== ReservationStatus.ACTIVE)
         throw new BadRequestException('Cannot cancel');
-        
+
       const updated = await tx.reservation.update({
         where: { id },
         data: { status: ReservationStatus.CANCELLED },
       });
-      
+
       await tx.product.update({
         where: { id: res.productId },
         data: { stockQuantity: { increment: res.quantity } },
       });
-      
+
+      await tx.stockHistory.create({
+        data: {
+          productId: res.productId,
+          quantity: res.quantity,
+          reason: 'RETURN',
+          note: `Reservation cancelled by customer`,
+        },
+      });
+
       return updated;
     });
   }
@@ -147,20 +176,30 @@ export class ReservationsService {
       const res = await tx.reservation.findUnique({ where: { id } });
       if (!res) throw new NotFoundException();
       const shop = await tx.shop.findUnique({ where: { ownerId } });
-      if (res.shopId !== shop?.id) throw new ForbiddenException('Not your reservation');
+      if (res.shopId !== shop?.id)
+        throw new ForbiddenException('Not your reservation');
       if (res.status !== ReservationStatus.ACTIVE)
         throw new BadRequestException('Cannot cancel');
-        
+
       const updated = await tx.reservation.update({
         where: { id },
         data: { status: ReservationStatus.CANCELLED },
       });
-      
+
       await tx.product.update({
         where: { id: res.productId },
         data: { stockQuantity: { increment: res.quantity } },
       });
-      
+
+      await tx.stockHistory.create({
+        data: {
+          productId: res.productId,
+          quantity: res.quantity,
+          reason: 'RETURN',
+          note: `Reservation cancelled by shopkeeper`,
+        },
+      });
+
       return updated;
     });
   }
@@ -216,5 +255,34 @@ export class ReservationsService {
       this.prisma.reservation.count({ where: { shopId: shop.id } }),
     ]);
     return { data, page, limit, total };
+  }
+
+  async rescheduleReservation(
+    id: string,
+    customerId: string,
+    newDateTime: Date,
+  ) {
+    const res = await this.prisma.reservation.findUnique({ where: { id } });
+    if (!res || res.customerId !== customerId) throw new ForbiddenException();
+    if (res.status !== ReservationStatus.ACTIVE)
+      throw new BadRequestException(
+        'Only active reservations can be rescheduled',
+      );
+
+    const newExpiresAt = new Date(newDateTime.getTime() + 2 * 60 * 60 * 1000);
+    const qrPayload = {
+      productId: res.productId,
+      customerId,
+      expiresAt: newExpiresAt.toISOString(),
+    };
+    const qrToken = this.jwtService.sign(qrPayload, {
+      secret: this.config.get('QR_SIGNING_SECRET'),
+      expiresIn: '2h',
+    });
+
+    return this.prisma.reservation.update({
+      where: { id },
+      data: { expiresAt: newExpiresAt, qrToken },
+    });
   }
 }

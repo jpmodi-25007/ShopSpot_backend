@@ -7,7 +7,7 @@ export class EventsService {
 
   async create(ownerId: string, data: any) {
     const shop = await this.prisma.shop.findUnique({
-      where: { ownerId }
+      where: { ownerId },
     });
     if (!shop) throw new NotFoundException('Shop not found');
 
@@ -25,7 +25,7 @@ export class EventsService {
         isActive: true,
         endDate: {
           gte: new Date(),
-        }
+        },
       },
       orderBy: { createdAt: 'desc' },
       include: {
@@ -38,8 +38,8 @@ export class EventsService {
     return this.prisma.event.findMany({
       where: {
         shop: {
-          ownerId: shopId
-        }
+          ownerId: shopId,
+        },
       },
       orderBy: { createdAt: 'desc' },
       include: {

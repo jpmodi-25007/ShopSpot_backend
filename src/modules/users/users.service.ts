@@ -22,7 +22,7 @@ export class UsersService {
             followers: true,
             rating: true,
             verificationStatus: true,
-          }
+          },
         },
         shop: {
           select: {
@@ -31,8 +31,8 @@ export class UsersService {
             logoUrl: true,
             rating: true,
             isKycVerified: true,
-          }
-        }
+          },
+        },
       },
     });
 

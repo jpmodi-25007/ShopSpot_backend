@@ -38,7 +38,12 @@ export class NegotiationsService {
       },
       include: {
         product: {
-          select: { id: true, name: true, mediaAssets: true, sellingPrice: true },
+          select: {
+            id: true,
+            name: true,
+            mediaAssets: true,
+            sellingPrice: true,
+          },
         },
         shop: { select: { id: true, name: true } },
       },
@@ -47,16 +52,16 @@ export class NegotiationsService {
       where: { id: dto.productId },
       data: { inquiryCount: { increment: 1 } },
     });
-    
+
     // Notify shop owner
     this.notificationsService.sendNotification(
       product.shop.ownerId,
       NotificationType.NEGOTIATION_RECEIVED,
       'New Offer Received',
       `You received an offer of ₹${dto.offeredPrice} for ${product.name}`,
-      { negotiationId: neg.id, productId: dto.productId }
+      { negotiationId: neg.id, productId: dto.productId },
     );
-    
+
     return neg;
   }
 
@@ -98,7 +103,7 @@ export class NegotiationsService {
     if (neg.customerId !== customerId) throw new ForbiddenException();
     if (neg.status !== NegotiationStatus.COUNTERED)
       throw new BadRequestException('No counter to respond to');
-    
+
     const updatedNeg = await this.prisma.negotiation.update({
       where: { id },
       data: {
@@ -106,7 +111,10 @@ export class NegotiationsService {
         status: NegotiationStatus.PENDING,
         counterRound: { increment: 1 },
       },
-      include: { product: { select: { name: true } }, shop: { select: { ownerId: true } } }
+      include: {
+        product: { select: { name: true } },
+        shop: { select: { ownerId: true } },
+      },
     });
 
     // Notify shop owner
@@ -115,7 +123,7 @@ export class NegotiationsService {
       NotificationType.NEGOTIATION_COUNTERED,
       'Customer Counter Offer',
       `The customer countered with ₹${counterPrice} for ${updatedNeg.product.name}`,
-      { negotiationId: neg.id, productId: neg.productId }
+      { negotiationId: neg.id, productId: neg.productId },
     );
 
     return updatedNeg;
@@ -165,7 +173,9 @@ export class NegotiationsService {
         where,
         include: {
           product: { select: { id: true, name: true, mediaAssets: true } },
-          customer: { select: { id: true, name: true, email: true, mobile: true } },
+          customer: {
+            select: { id: true, name: true, email: true, mobile: true },
+          },
           messages: { orderBy: { createdAt: 'desc' }, take: 1 },
         },
         orderBy: { createdAt: 'desc' },
@@ -190,7 +200,7 @@ export class NegotiationsService {
     if (!neg || neg.shopId !== shop?.id) throw new ForbiddenException();
     if (neg.counterRound >= 3)
       throw new BadRequestException('Maximum counter rounds reached');
-      
+
     const updatedNeg = await this.prisma.negotiation.update({
       where: { id: negId },
       data: {
@@ -199,7 +209,7 @@ export class NegotiationsService {
         status: NegotiationStatus.COUNTERED,
         counterRound: { increment: 1 },
       },
-      include: { product: { select: { name: true } } }
+      include: { product: { select: { name: true } } },
     });
 
     // Notify customer
@@ -208,7 +218,7 @@ export class NegotiationsService {
       NotificationType.NEGOTIATION_COUNTERED,
       'Shop Counter Offer',
       `The shop countered with ₹${counterPrice} for ${updatedNeg.product.name}`,
-      { negotiationId: negId, productId: updatedNeg.productId }
+      { negotiationId: negId, productId: updatedNeg.productId },
     );
 
     return updatedNeg;

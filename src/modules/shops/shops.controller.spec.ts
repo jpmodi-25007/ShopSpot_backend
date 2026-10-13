@@ -64,8 +64,13 @@ describe('ShopsController', () => {
 
       shopsService.createShop.mockResolvedValue(result as any);
 
-      expect(await controller.createShop('user-1', createShopDto as any)).toEqual(result);
-      expect(shopsService.createShop).toHaveBeenCalledWith('user-1', createShopDto);
+      expect(
+        await controller.createShop('user-1', createShopDto as any),
+      ).toEqual(result);
+      expect(shopsService.createShop).toHaveBeenCalledWith(
+        'user-1',
+        createShopDto,
+      );
     });
   });
 

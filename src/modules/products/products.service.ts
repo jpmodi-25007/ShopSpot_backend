@@ -23,7 +23,11 @@ export class ProductsService {
   async createProduct(ownerId: string, dto: CreateProductDto) {
     const shop = await this.getOrCreateShop(ownerId);
 
-    if (dto.mrp !== undefined && dto.mrp !== null && Number(dto.sellingPrice) > Number(dto.mrp)) {
+    if (
+      dto.mrp !== undefined &&
+      dto.mrp !== null &&
+      Number(dto.sellingPrice) > Number(dto.mrp)
+    ) {
       throw new ForbiddenException('Selling price cannot be greater than MRP');
     }
 
@@ -52,19 +56,20 @@ export class ProductsService {
         variants: dto.variants as any,
         tags: dto.tags ?? [],
         mediaAssets: {
-          create: dto.mediaAssets?.map((asset, index) => ({
-            publicId: asset.publicId,
-            secureUrl: asset.secureUrl,
-            width: asset.width,
-            height: asset.height,
-            format: asset.format,
-            bytes: asset.bytes,
-            resourceType: asset.resourceType || 'image',
-            folder: asset.folder,
-            entityType: 'PRODUCT',
-            isPrimary: index === 0,
-            position: index,
-          })) || [],
+          create:
+            dto.mediaAssets?.map((asset, index) => ({
+              publicId: asset.publicId,
+              secureUrl: asset.secureUrl,
+              width: asset.width,
+              height: asset.height,
+              format: asset.format,
+              bytes: asset.bytes,
+              resourceType: asset.resourceType || 'image',
+              folder: asset.folder,
+              entityType: 'PRODUCT',
+              isPrimary: index === 0,
+              position: index,
+            })) || [],
         },
       },
       include: {
@@ -106,20 +111,35 @@ export class ProductsService {
   ) {
     await this.assertOwnership(ownerId, productId);
 
-    const existingProduct = await this.prisma.product.findUnique({ where: { id: productId } });
+    const existingProduct = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
     if (!existingProduct) throw new NotFoundException('Product not found');
 
-    if (dto.mrp !== undefined && dto.mrp !== null && dto.sellingPrice !== undefined) {
+    if (
+      dto.mrp !== undefined &&
+      dto.mrp !== null &&
+      dto.sellingPrice !== undefined
+    ) {
       if (Number(dto.sellingPrice) > Number(dto.mrp)) {
-        throw new ForbiddenException('Selling price cannot be greater than MRP');
+        throw new ForbiddenException(
+          'Selling price cannot be greater than MRP',
+        );
       }
     } else if (dto.sellingPrice !== undefined) {
-      if (existingProduct.mrp !== null && Number(dto.sellingPrice) > Number(existingProduct.mrp)) {
-        throw new ForbiddenException('Selling price cannot be greater than existing MRP');
+      if (
+        existingProduct.mrp !== null &&
+        Number(dto.sellingPrice) > Number(existingProduct.mrp)
+      ) {
+        throw new ForbiddenException(
+          'Selling price cannot be greater than existing MRP',
+        );
       }
     } else if (dto.mrp !== undefined && dto.mrp !== null) {
       if (Number(existingProduct.sellingPrice) > Number(dto.mrp)) {
-        throw new ForbiddenException('Existing selling price cannot be greater than new MRP');
+        throw new ForbiddenException(
+          'Existing selling price cannot be greater than new MRP',
+        );
       }
     }
 
@@ -168,10 +188,23 @@ export class ProductsService {
       product!.lowStockThreshold,
     );
 
-    return this.prisma.product.update({
-      where: { id: productId },
-      data: { stockQuantity: dto.quantity, stockStatus },
-    });
+    const delta = dto.quantity - product!.stockQuantity;
+
+    const [updated] = await this.prisma.$transaction([
+      this.prisma.product.update({
+        where: { id: productId },
+        data: { stockQuantity: dto.quantity, stockStatus },
+      }),
+      this.prisma.stockHistory.create({
+        data: {
+          productId,
+          quantity: delta,
+          reason: dto.reason || 'ADJUSTMENT',
+          note: dto.note,
+        },
+      }),
+    ]);
+    return updated;
   }
 
   // ─── PUBLIC OPS ───────────────────────────────────────────────────────────
@@ -343,7 +376,9 @@ export class ProductsService {
   private async getOrCreateShop(ownerId: string) {
     let shop = await this.prisma.shop.findUnique({ where: { ownerId } });
     if (!shop) {
-      const user = await this.prisma.user.findUnique({ where: { id: ownerId } });
+      const user = await this.prisma.user.findUnique({
+        where: { id: ownerId },
+      });
       shop = await this.prisma.shop.create({
         data: {
           ownerId,

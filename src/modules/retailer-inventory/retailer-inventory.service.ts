@@ -68,6 +68,65 @@ export class RetailerInventoryService {
     });
   }
 
+  async updatePurchaseOrder(
+    userId: string,
+    id: string,
+    data: {
+      status?: string;
+      isDelivered?: boolean;
+      details?: string;
+      expectedDate?: Date;
+      productId?: string;
+      quantity?: number;
+    },
+  ) {
+    const shop = await this.prisma.shop.findUnique({
+      where: { ownerId: userId },
+    });
+    if (!shop) throw new NotFoundException('Shop not found');
+
+    const po = await this.prisma.purchaseOrder.findFirst({
+      where: { id, shopId: shop.id },
+    });
+    if (!po) throw new NotFoundException('Purchase order not found');
+
+    const wasDelivered =
+      po.isDelivered || po.status.toLowerCase() === 'delivered';
+    const isNowDelivered =
+      data.isDelivered === true ||
+      (data.status != null && data.status.toLowerCase() === 'delivered');
+
+    const { productId, quantity, ...updateFields } = data;
+
+    const updated = await this.prisma.purchaseOrder.update({
+      where: { id },
+      data: updateFields,
+    });
+
+    if (
+      !wasDelivered &&
+      isNowDelivered &&
+      productId &&
+      quantity &&
+      quantity > 0
+    ) {
+      await this.prisma.product.update({
+        where: { id: productId },
+        data: { stockQuantity: { increment: quantity } },
+      });
+      await this.prisma.stockHistory.create({
+        data: {
+          productId,
+          quantity,
+          reason: 'RESTOCK',
+          note: `Purchase Order ${po.poNumber} received`,
+        },
+      });
+    }
+
+    return updated;
+  }
+
   async getStockHistory(userId: string) {
     const shop = await this.prisma.shop.findUnique({
       where: { ownerId: userId },

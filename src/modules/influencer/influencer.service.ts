@@ -1,7 +1,23 @@
-import { Injectable, NotFoundException, ForbiddenException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { UpdateInfluencerProfileDto, CreateCampaignDto, SubmitBidDto } from './dto/influencer.dto';
-import { CampaignStatus, BidStatus, UserRole, NotificationType, ContentStatus, CampaignPaymentStatus } from '@prisma/client';
+import {
+  UpdateInfluencerProfileDto,
+  CreateCampaignDto,
+  SubmitBidDto,
+} from './dto/influencer.dto';
+import {
+  CampaignStatus,
+  BidStatus,
+  UserRole,
+  NotificationType,
+  ContentStatus,
+  CampaignPaymentStatus,
+} from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 
 @Injectable()
@@ -37,23 +53,27 @@ export class InfluencerService {
 
   // ─── CAMPAIGNS FOR INFLUENCER ────────────────────────────────────────────
 
-  async getEligibleCampaigns(userId: string, industry?: string, search?: string) {
+  async getEligibleCampaigns(
+    userId: string,
+    industry?: string,
+    search?: string,
+  ) {
     const whereClause: any = { status: CampaignStatus.PUBLISHED };
     const AND: any[] = [
       {
         OR: [
           { applicationDeadline: null },
-          { applicationDeadline: { gt: new Date() } }
-        ]
-      }
+          { applicationDeadline: { gt: new Date() } },
+        ],
+      },
     ];
 
     if (industry && industry !== 'All Campaigns') {
       AND.push({
         OR: [
           { targetCategories: { has: industry } },
-          { shop: { category: { name: industry } } }
-        ]
+          { shop: { category: { name: industry } } },
+        ],
       });
     }
 
@@ -62,8 +82,8 @@ export class InfluencerService {
         OR: [
           { title: { contains: search, mode: 'insensitive' } },
           { description: { contains: search, mode: 'insensitive' } },
-          { shop: { name: { contains: search, mode: 'insensitive' } } }
-        ]
+          { shop: { name: { contains: search, mode: 'insensitive' } } },
+        ],
       });
     }
 
@@ -72,12 +92,17 @@ export class InfluencerService {
     }
 
     // Determine the high budget threshold (top 10% of all published campaigns)
-    const totalPublished = await this.prisma.influencerCampaign.count({ where: { status: CampaignStatus.PUBLISHED } });
+    const totalPublished = await this.prisma.influencerCampaign.count({
+      where: { status: CampaignStatus.PUBLISHED },
+    });
     let highBudgetThreshold = Number.MAX_SAFE_INTEGER;
 
     if (totalPublished > 0) {
       // e.g. for 20 campaigns, 10% is 2. The 2nd item (index 1) sets the threshold.
-      const top10PercentIndex = Math.max(0, Math.ceil(totalPublished * 0.1) - 1);
+      const top10PercentIndex = Math.max(
+        0,
+        Math.ceil(totalPublished * 0.1) - 1,
+      );
       const thresholdCampaign = await this.prisma.influencerCampaign.findFirst({
         where: { status: CampaignStatus.PUBLISHED },
         orderBy: { budgetMax: 'desc' },
@@ -91,18 +116,18 @@ export class InfluencerService {
 
     const campaigns = await this.prisma.influencerCampaign.findMany({
       where: whereClause,
-      include: { 
+      include: {
         shop: true,
         product: {
           include: {
-            mediaAssets: true
-          }
-        }
+            mediaAssets: true,
+          },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return campaigns.map(c => ({
+    return campaigns.map((c) => ({
       ...c,
       isHighBudget: Number(c.budgetMax) >= highBudgetThreshold,
     }));
@@ -110,17 +135,26 @@ export class InfluencerService {
 
   async submitBid(userId: string, campaignId: string, dto: SubmitBidDto) {
     const profile = await this.getProfile(userId);
-    
+
     // Check if campaign is accepting bids
     const campaign = await this.prisma.influencerCampaign.findUnique({
       where: { id: campaignId },
     });
-    if (!campaign || (campaign.status !== CampaignStatus.PUBLISHED && campaign.status !== CampaignStatus.BIDDING_OPEN)) {
+    if (
+      !campaign ||
+      (campaign.status !== CampaignStatus.PUBLISHED &&
+        campaign.status !== CampaignStatus.BIDDING_OPEN)
+    ) {
       throw new BadRequestException('Campaign is not accepting bids');
     }
-    
-    if (campaign.applicationDeadline && campaign.applicationDeadline < new Date()) {
-      throw new BadRequestException('The application deadline for this campaign has passed');
+
+    if (
+      campaign.applicationDeadline &&
+      campaign.applicationDeadline < new Date()
+    ) {
+      throw new BadRequestException(
+        'The application deadline for this campaign has passed',
+      );
     }
 
     // Ensure no duplicate active bid
@@ -129,12 +163,14 @@ export class InfluencerService {
         campaignId,
         influencerId: profile.id,
         status: {
-          notIn: [BidStatus.WITHDRAWN, BidStatus.REJECTED]
-        }
-      }
+          notIn: [BidStatus.WITHDRAWN, BidStatus.REJECTED],
+        },
+      },
     });
     if (existingBid) {
-      throw new BadRequestException('You already have an active bid for this campaign');
+      throw new BadRequestException(
+        'You already have an active bid for this campaign',
+      );
     }
 
     const bid = await this.prisma.influencerBid.create({
@@ -154,7 +190,7 @@ export class InfluencerService {
       NotificationType.BID_RECEIVED,
       'New Campaign Bid',
       `${profile.displayName} submitted a bid of ₹${dto.proposedAmount} for your campaign`,
-      { campaignId, bidId: bid.id }
+      { campaignId, bidId: bid.id },
     );
 
     return bid;
@@ -178,7 +214,7 @@ export class InfluencerService {
 
   async getAnalytics(userId: string) {
     const profile = await this.getProfile(userId);
-    
+
     // Fetch campaign assignments for this influencer
     const assignments = await this.prisma.campaignAssignment.findMany({
       where: { influencerId: profile.id },
@@ -192,15 +228,18 @@ export class InfluencerService {
     for (const assignment of assignments) {
       const amount = Number(assignment.agreedAmount) || 0;
       const isPaid = assignment.paymentStatus === 'FULLY_PAID';
-      
+
       // If payment is completed or assignment is complete, it contributes to total earnings (or at least we show it)
       if (isPaid || assignment.paymentStatus === 'ADVANCE_PAID') {
-         totalEarnings += amount;
+        totalEarnings += amount;
       }
 
       // Format month string, e.g., "Aug 2026"
       const date = assignment.scheduledDate;
-      const monthStr = date.toLocaleString('default', { month: 'short' }) + ' ' + date.getFullYear();
+      const monthStr =
+        date.toLocaleString('default', { month: 'short' }) +
+        ' ' +
+        date.getFullYear();
 
       payouts.push({
         month: monthStr,
@@ -238,7 +277,9 @@ export class InfluencerService {
         budgetMax: dto.budgetMax,
         city: dto.city,
         targetCategories: dto.targetCategories || [],
-        applicationDeadline: dto.applicationDeadline ? new Date(dto.applicationDeadline) : null,
+        applicationDeadline: dto.applicationDeadline
+          ? new Date(dto.applicationDeadline)
+          : null,
         publishByDate: dto.publishByDate ? new Date(dto.publishByDate) : null,
         status: CampaignStatus.PUBLISHED,
       },
@@ -253,17 +294,21 @@ export class InfluencerService {
         shop: true,
         product: {
           include: {
-            mediaAssets: true
-          }
+            mediaAssets: true,
+          },
         },
         _count: {
-          select: { bids: true }
-        }
-      }
+          select: { bids: true },
+        },
+      },
     });
   }
 
-  async updateCampaign(shopkeeperId: string, campaignId: string, dto: Partial<CreateCampaignDto>) {
+  async updateCampaign(
+    shopkeeperId: string,
+    campaignId: string,
+    dto: Partial<CreateCampaignDto>,
+  ) {
     const campaign = await this.prisma.influencerCampaign.findFirst({
       where: { id: campaignId, shopkeeperId },
     });
@@ -299,7 +344,9 @@ export class InfluencerService {
 
     return this.prisma.influencerBid.findMany({
       where: { campaignId },
-      include: { influencer: { include: { user: { select: { avatarUrl: true } } } } },
+      include: {
+        influencer: { include: { user: { select: { avatarUrl: true } } } },
+      },
       orderBy: { proposedAmount: 'asc' },
     });
   }
@@ -313,11 +360,20 @@ export class InfluencerService {
       throw new NotFoundException('Bid not found');
     }
 
-    if (bid.status !== BidStatus.SUBMITTED && bid.status !== BidStatus.SHORTLISTED && bid.status !== BidStatus.COUNTERED) {
-      throw new BadRequestException('Bid is not in a valid state to be accepted');
+    if (
+      bid.status !== BidStatus.SUBMITTED &&
+      bid.status !== BidStatus.SHORTLISTED &&
+      bid.status !== BidStatus.COUNTERED
+    ) {
+      throw new BadRequestException(
+        'Bid is not in a valid state to be accepted',
+      );
     }
 
-    if (bid.campaign.status !== CampaignStatus.PUBLISHED && bid.campaign.status !== CampaignStatus.BIDDING_OPEN) {
+    if (
+      bid.campaign.status !== CampaignStatus.PUBLISHED &&
+      bid.campaign.status !== CampaignStatus.BIDDING_OPEN
+    ) {
       throw new BadRequestException('Campaign is no longer accepting bids');
     }
 
@@ -352,13 +408,18 @@ export class InfluencerService {
       NotificationType.BID_ACCEPTED,
       'Bid Accepted!',
       `Your bid for campaign '${updatedCampaign.title}' was accepted!`,
-      { campaignId: bid.campaignId, bidId }
+      { campaignId: bid.campaignId, bidId },
     );
 
     return updatedCampaign;
   }
 
-  async counterBid(shopkeeperId: string, bidId: string, counterAmount: number, message?: string) {
+  async counterBid(
+    shopkeeperId: string,
+    bidId: string,
+    counterAmount: number,
+    message?: string,
+  ) {
     const bid = await this.prisma.influencerBid.findUnique({
       where: { id: bidId },
       include: { campaign: true, influencer: true },
@@ -392,7 +453,7 @@ export class InfluencerService {
       NotificationType.BID_COUNTERED,
       'Counter Offer Received',
       `The retailer made a counter offer of ₹${counterAmount} for your bid.`,
-      { campaignId: bid.campaignId, bidId }
+      { campaignId: bid.campaignId, bidId },
     );
 
     return counterOffer;
@@ -404,11 +465,16 @@ export class InfluencerService {
     const profile = await this.getProfile(userId);
     const bid = await this.prisma.influencerBid.findUnique({
       where: { id: bidId, influencerId: profile.id },
-      include: { campaign: true, counterOffers: { orderBy: { createdAt: 'desc' }, take: 1 } },
+      include: {
+        campaign: true,
+        counterOffers: { orderBy: { createdAt: 'desc' }, take: 1 },
+      },
     });
 
     if (!bid || bid.status !== BidStatus.COUNTERED) {
-      throw new BadRequestException('Bid is not awaiting counter offer response');
+      throw new BadRequestException(
+        'Bid is not awaiting counter offer response',
+      );
     }
 
     const latestCounter = bid.counterOffers[0];
@@ -419,7 +485,10 @@ export class InfluencerService {
     // Accept bid
     await this.prisma.influencerBid.update({
       where: { id: bidId },
-      data: { status: BidStatus.ACCEPTED, proposedAmount: latestCounter.amount },
+      data: {
+        status: BidStatus.ACCEPTED,
+        proposedAmount: latestCounter.amount,
+      },
     });
 
     // Update campaign
@@ -447,7 +516,7 @@ export class InfluencerService {
       NotificationType.BID_ACCEPTED,
       'Counter Offer Accepted!',
       `The influencer accepted your counter offer for '${updatedCampaign.title}'.`,
-      { campaignId: bid.campaignId, bidId }
+      { campaignId: bid.campaignId, bidId },
     );
 
     return updatedCampaign;
@@ -461,7 +530,9 @@ export class InfluencerService {
     });
 
     if (!bid || bid.status !== BidStatus.COUNTERED) {
-      throw new BadRequestException('Bid is not awaiting counter offer response');
+      throw new BadRequestException(
+        'Bid is not awaiting counter offer response',
+      );
     }
 
     await this.prisma.influencerBid.update({
@@ -471,10 +542,10 @@ export class InfluencerService {
 
     this.notificationsService.sendNotification(
       bid.campaign.shopkeeperId,
-      NotificationType.BID_RECEIVED,
+      NotificationType.BID_COUNTERED,
       'Counter Offer Rejected',
       `The influencer rejected your counter offer.`,
-      { campaignId: bid.campaignId, bidId }
+      { campaignId: bid.campaignId, bidId },
     );
 
     return { success: true };
@@ -491,7 +562,11 @@ export class InfluencerService {
     });
   }
 
-  async submitDeliverable(userId: string, assignmentId: string, contentUrl: string) {
+  async submitDeliverable(
+    userId: string,
+    assignmentId: string,
+    contentUrl: string,
+  ) {
     const profile = await this.getProfile(userId);
     const assignment = await this.prisma.campaignAssignment.findUnique({
       where: { id: assignmentId, influencerId: profile.id },
@@ -513,7 +588,7 @@ export class InfluencerService {
       NotificationType.SYSTEM, // Using SYSTEM type or a suitable one
       'Deliverables Submitted',
       `Influencer submitted their deliverables for '${assignment.campaign.title}'.`,
-      { assignmentId }
+      { assignmentId },
     );
 
     return updated;
@@ -522,7 +597,10 @@ export class InfluencerService {
   async getShopkeeperAssignments(shopkeeperId: string) {
     return this.prisma.campaignAssignment.findMany({
       where: { shopkeeperId },
-      include: { influencer: { include: { user: { select: { avatarUrl: true } } } }, campaign: true },
+      include: {
+        influencer: { include: { user: { select: { avatarUrl: true } } } },
+        campaign: true,
+      },
       orderBy: { createdAt: 'desc' },
     });
   }
@@ -534,7 +612,11 @@ export class InfluencerService {
     });
 
     if (!assignment) throw new NotFoundException('Assignment not found');
-    if (assignment.contentStatus !== ContentStatus.SUBMITTED && assignment.contentStatus !== ContentStatus.APPROVED && assignment.contentStatus !== ContentStatus.POSTED) {
+    if (
+      assignment.contentStatus !== ContentStatus.SUBMITTED &&
+      assignment.contentStatus !== ContentStatus.APPROVED &&
+      assignment.contentStatus !== ContentStatus.POSTED
+    ) {
       throw new BadRequestException('Content must be submitted before payment');
     }
 
@@ -551,7 +633,7 @@ export class InfluencerService {
       NotificationType.SYSTEM,
       'Payment Released!',
       `Your payment of ₹${assignment.agreedAmount} for '${assignment.campaign.title}' has been released.`,
-      { assignmentId }
+      { assignmentId },
     );
 
     return updated;

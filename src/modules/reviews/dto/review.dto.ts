@@ -1,14 +1,23 @@
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { IsInt, IsString, IsOptional, IsUUID, Min, Max, IsArray, ValidateIf } from 'class-validator';
+import {
+  IsInt,
+  IsString,
+  IsOptional,
+  IsUUID,
+  Min,
+  Max,
+  IsArray,
+  ValidateIf,
+} from 'class-validator';
 
 export class CreateReviewDto {
   @ApiPropertyOptional({ description: 'ID of the shop being reviewed' })
-  @ValidateIf(o => !o.productId)
+  @ValidateIf((o) => !o.productId)
   @IsUUID()
   shopId?: string;
 
   @ApiPropertyOptional({ description: 'ID of the product being reviewed' })
-  @ValidateIf(o => !o.shopId)
+  @ValidateIf((o) => !o.shopId)
   @IsUUID()
   productId?: string;
 

@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, UseGuards, Put, Param, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Put,
+  Param,
+  Delete,
+} from '@nestjs/common';
 import { RetailerInventoryService } from './retailer-inventory.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -28,8 +37,20 @@ export class RetailerInventoryController {
   }
 
   @Post('purchase-orders')
-  async createPurchaseOrder(@CurrentUser('id') userId: string, @Body() data: any) {
+  async createPurchaseOrder(
+    @CurrentUser('id') userId: string,
+    @Body() data: any,
+  ) {
     return this.inventoryService.createPurchaseOrder(userId, data);
+  }
+
+  @Put('purchase-orders/:id')
+  async updatePurchaseOrder(
+    @CurrentUser('id') userId: string,
+    @Param('id') id: string,
+    @Body() data: any,
+  ) {
+    return this.inventoryService.updatePurchaseOrder(userId, id, data);
   }
 
   @Get('stock-history')

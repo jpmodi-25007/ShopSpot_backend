@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -6,7 +10,9 @@ export class SavedService {
   constructor(private prisma: PrismaService) {}
 
   async saveProduct(userId: string, productId: string) {
-    const product = await this.prisma.product.findUnique({ where: { id: productId } });
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
     if (!product) throw new NotFoundException('Product not found');
 
     const existing = await this.prisma.savedProduct.findUnique({
@@ -16,7 +22,14 @@ export class SavedService {
 
     return this.prisma.savedProduct.create({
       data: { userId, productId },
-      include: { product: { include: { mediaAssets: true, shop: { select: { id: true, name: true, slug: true } } } } },
+      include: {
+        product: {
+          include: {
+            mediaAssets: true,
+            shop: { select: { id: true, name: true, slug: true } },
+          },
+        },
+      },
     });
   }
 
@@ -34,10 +47,10 @@ export class SavedService {
   async getSavedProducts(userId: string) {
     const saved = await this.prisma.savedProduct.findMany({
       where: { userId },
-      include: { 
+      include: {
         product: {
-          include: { shop: true }
-        }
+          include: { shop: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });

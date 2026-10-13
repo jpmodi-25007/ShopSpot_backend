@@ -6,10 +6,7 @@ import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [NotificationsModule],
-  controllers: [
-    InfluencerController,
-    ShopkeeperCampaignController,
-  ],
+  controllers: [InfluencerController, ShopkeeperCampaignController],
   providers: [InfluencerService],
   exports: [InfluencerService],
 })

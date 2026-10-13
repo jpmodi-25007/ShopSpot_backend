@@ -20,17 +20,25 @@ export class NotificationFactory {
     };
   }
 
-  static negotiationMessage(negotiationId: string, shopkeeper: boolean): NotificationPayload {
+  static negotiationMessage(
+    negotiationId: string,
+    shopkeeper: boolean,
+  ): NotificationPayload {
     return {
       notificationType: NotificationType.NEGOTIATION_RECEIVED,
       entityType: 'NEGOTIATION',
       entityId: negotiationId,
       actionType: 'OPEN_NEGOTIATION',
-      route: shopkeeper ? `/retailer/negotiations/${negotiationId}` : `/negotiation/${negotiationId}`,
+      route: shopkeeper
+        ? `/retailer/negotiations/${negotiationId}`
+        : `/negotiation/${negotiationId}`,
     };
   }
 
-  static reservationCreated(reservationId: string, productId: string): NotificationPayload {
+  static reservationCreated(
+    reservationId: string,
+    productId: string,
+  ): NotificationPayload {
     return {
       notificationType: NotificationType.RESERVATION_CREATED,
       entityType: 'RESERVATION',

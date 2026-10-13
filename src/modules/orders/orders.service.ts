@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, ForbiddenException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { OrderStatus, PaymentStatus, DeliveryType } from '@prisma/client';
@@ -45,6 +49,14 @@ export class OrdersService {
             where: { id: item.productId },
             data: { stockQuantity: newQty },
           });
+          await tx.stockHistory.create({
+            data: {
+              productId: item.productId,
+              quantity: -item.quantity,
+              reason: 'SALE',
+              note: `Order ${orderNumber}`,
+            },
+          });
         }
       }
 
@@ -71,25 +83,35 @@ export class OrdersService {
     return this.prisma.order.findMany({
       where: { shopId: shop.id },
       orderBy: { createdAt: 'desc' },
-      include: { customer: { select: { name: true, email: true, mobile: true } } },
+      include: {
+        customer: { select: { name: true, email: true, mobile: true } },
+      },
     });
   }
 
-  async updateOrderStatus(shopkeeperId: string, orderId: string, dto: UpdateOrderStatusDto) {
+  async updateOrderStatus(
+    shopkeeperId: string,
+    orderId: string,
+    dto: UpdateOrderStatusDto,
+  ) {
     const order = await this.prisma.order.findUnique({
       where: { id: orderId },
       include: { shop: true },
     });
-    
+
     if (!order) throw new NotFoundException('Order not found');
-    if (order.shop.ownerId !== shopkeeperId) throw new ForbiddenException('Not your order');
+    if (order.shop.ownerId !== shopkeeperId)
+      throw new ForbiddenException('Not your order');
 
     const updated = await this.prisma.order.update({
       where: { id: orderId },
       data: { status: dto.status },
     });
 
-    if (dto.status === OrderStatus.CANCELLED && order.status !== OrderStatus.CANCELLED) {
+    if (
+      dto.status === OrderStatus.CANCELLED &&
+      order.status !== OrderStatus.CANCELLED
+    ) {
       const items = order.items as any[];
       if (items && Array.isArray(items)) {
         for (const item of items) {
@@ -97,6 +119,14 @@ export class OrdersService {
             await this.prisma.product.update({
               where: { id: item.productId },
               data: { stockQuantity: { increment: item.quantity } },
+            });
+            await this.prisma.stockHistory.create({
+              data: {
+                productId: item.productId,
+                quantity: item.quantity,
+                reason: 'RETURN',
+                note: `Order ${order.orderNumber} cancelled`,
+              },
             });
           }
         }

@@ -17,12 +17,15 @@ model User {
   name                 String?
   avatarUrl            String?
   role                 UserRole           @default(CUSTOMER)
+  pendingRole          String?
   languagePreference   String             @default("en")
   addressJson          Json?              @map("address")
   isEmailVerified      Boolean            @default(false)
   isMobileVerified     Boolean            @default(false)
   isActive             Boolean            @default(true)
   lastLoginAt          DateTime?
+  resetCode            String?
+  resetCodeExpiresAt   DateTime?
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   addresses            Address[]

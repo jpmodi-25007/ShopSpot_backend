@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
@@ -37,9 +41,13 @@ export class PromotionsService {
   // Create a new banner
   async createPromotion(data: any) {
     if (data.isActive !== false) {
-      const activeCount = await this.prisma.promotionBanner.count({ where: { isActive: true } });
+      const activeCount = await this.prisma.promotionBanner.count({
+        where: { isActive: true },
+      });
       if (activeCount >= 5) {
-        throw new BadRequestException('Maximum of 5 active promotional banners is allowed.');
+        throw new BadRequestException(
+          'Maximum of 5 active promotional banners is allowed.',
+        );
       }
     }
 
@@ -59,13 +67,19 @@ export class PromotionsService {
 
   // Update a banner
   async updatePromotion(id: string, data: any) {
-    const banner = await this.prisma.promotionBanner.findUnique({ where: { id } });
+    const banner = await this.prisma.promotionBanner.findUnique({
+      where: { id },
+    });
     if (!banner) throw new NotFoundException('Promotion not found');
 
     if (data.isActive === true && !banner.isActive) {
-      const activeCount = await this.prisma.promotionBanner.count({ where: { isActive: true } });
+      const activeCount = await this.prisma.promotionBanner.count({
+        where: { isActive: true },
+      });
       if (activeCount >= 5) {
-        throw new BadRequestException('Maximum of 5 active promotional banners is allowed.');
+        throw new BadRequestException(
+          'Maximum of 5 active promotional banners is allowed.',
+        );
       }
     }
 
@@ -76,8 +90,18 @@ export class PromotionsService {
         title: data.title,
         shopId: data.shopId || null,
         productId: data.productId || null,
-        startDate: data.startDate !== undefined ? (data.startDate ? new Date(data.startDate) : null) : undefined,
-        endDate: data.endDate !== undefined ? (data.endDate ? new Date(data.endDate) : null) : undefined,
+        startDate:
+          data.startDate !== undefined
+            ? data.startDate
+              ? new Date(data.startDate)
+              : null
+            : undefined,
+        endDate:
+          data.endDate !== undefined
+            ? data.endDate
+              ? new Date(data.endDate)
+              : null
+            : undefined,
         isActive: data.isActive,
         displayOrder: data.displayOrder,
       },
@@ -86,7 +110,9 @@ export class PromotionsService {
 
   // Delete a banner
   async deletePromotion(id: string) {
-    const banner = await this.prisma.promotionBanner.findUnique({ where: { id } });
+    const banner = await this.prisma.promotionBanner.findUnique({
+      where: { id },
+    });
     if (!banner) throw new NotFoundException('Promotion not found');
 
     return this.prisma.promotionBanner.delete({ where: { id } });

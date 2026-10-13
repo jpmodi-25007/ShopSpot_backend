@@ -57,8 +57,13 @@ describe('NegotiationsController', () => {
 
       negotiationsService.startNegotiation.mockResolvedValue(result as any);
 
-      expect(await controller.start('user-1', body as any)).toEqual(result as any);
-      expect(negotiationsService.startNegotiation).toHaveBeenCalledWith('user-1', body);
+      expect(await controller.start('user-1', body as any)).toEqual(
+        result as any,
+      );
+      expect(negotiationsService.startNegotiation).toHaveBeenCalledWith(
+        'user-1',
+        body,
+      );
     });
   });
 
@@ -79,8 +84,13 @@ describe('NegotiationsController', () => {
 
       negotiationsService.shopkeeperAccept.mockResolvedValue(result as any);
 
-      expect(await controller.shopAccept('neg-1', 'shop-staff-1')).toEqual(result as any);
-      expect(negotiationsService.shopkeeperAccept).toHaveBeenCalledWith('neg-1', 'shop-staff-1');
+      expect(await controller.shopAccept('neg-1', 'shop-staff-1')).toEqual(
+        result as any,
+      );
+      expect(negotiationsService.shopkeeperAccept).toHaveBeenCalledWith(
+        'neg-1',
+        'shop-staff-1',
+      );
     });
   });
 });

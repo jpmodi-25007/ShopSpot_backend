@@ -101,7 +101,12 @@ export class AuthService {
 
     const hashed = await argon2.hash(dto.password);
     const user = await this.prisma.user.create({
-      data: { mobile, password: hashed, name: dto.name?.trim(), role: dto.role },
+      data: {
+        mobile,
+        password: hashed,
+        name: dto.name?.trim(),
+        role: dto.role,
+      },
     });
 
     const tokens = await this.generateTokens(user);
@@ -206,7 +211,9 @@ export class AuthService {
         });
 
         // Generate a secure 6-digit reset code
-        const resetCode = Math.floor(100000 + Math.random() * 900000).toString();
+        const resetCode = Math.floor(
+          100000 + Math.random() * 900000,
+        ).toString();
         const resetCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
         // Persist the code so it can be validated on the reset endpoint.
@@ -216,7 +223,7 @@ export class AuthService {
           data: {
             resetCode,
             resetCodeExpiresAt,
-          } as any, // cast until schema columns are added
+          } as any,
         });
 
         await transporter.sendMail({
@@ -338,7 +345,7 @@ export class AuthService {
     // Requires a `pendingRole String?` column on User (add to Prisma schema).
     await this.prisma.user.update({
       where: { id: userId },
-      data: { pendingRole: upperRole } as any, // cast until schema column is added
+      data: { pendingRole: upperRole } as any,
     });
   }
 
@@ -346,6 +353,25 @@ export class AuthService {
 
   async validateUserById(id: string): Promise<User | null> {
     return this.prisma.user.findFirst({ where: { id, isActive: true } });
+  }
+
+  private parseDurationToMs(duration: string): number {
+    const match = duration.match(/^(\d+)([smhd])$/);
+    if (!match) return 7 * 24 * 60 * 60 * 1000;
+    const value = parseInt(match[1], 10);
+    const unit = match[2];
+    switch (unit) {
+      case 's':
+        return value * 1000;
+      case 'm':
+        return value * 60 * 1000;
+      case 'h':
+        return value * 60 * 60 * 1000;
+      case 'd':
+        return value * 24 * 60 * 60 * 1000;
+      default:
+        return 7 * 24 * 60 * 60 * 1000;
+    }
   }
 
   private async generateTokens(user: User): Promise<AuthTokens> {
@@ -356,27 +382,46 @@ export class AuthService {
       role: user.role,
     };
 
+    const accessExpiresInStr = this.config.get<string>(
+      'JWT_ACCESS_EXPIRES_IN',
+      '15m',
+    );
+    const refreshExpiresInStr = this.config.get<string>(
+      'JWT_REFRESH_EXPIRES_IN',
+      '7d',
+    );
+
+    const accessSeconds = Math.max(
+      60,
+      Math.floor(this.parseDurationToMs(accessExpiresInStr) / 1000),
+    );
+    const refreshMs = this.parseDurationToMs(refreshExpiresInStr);
+    const refreshSeconds = Math.max(60, Math.floor(refreshMs / 1000));
+
     const [accessToken, refreshToken] = await Promise.all([
       this.jwtService.signAsync(payload, {
-        secret: this.config.get('JWT_ACCESS_SECRET'),
-        expiresIn: this.config.get('JWT_ACCESS_EXPIRES_IN', '15m'),
+        secret: this.config.get<string>('JWT_ACCESS_SECRET'),
+        expiresIn: accessSeconds,
       }),
       this.jwtService.signAsync(
         { ...payload, jti: randomUUID() },
         {
-          secret: this.config.get('JWT_REFRESH_SECRET'),
-          expiresIn: this.config.get('JWT_REFRESH_EXPIRES_IN', '7d'),
+          secret: this.config.get<string>('JWT_REFRESH_SECRET'),
+          expiresIn: refreshSeconds,
         },
       ),
     ]);
 
-    const expiresAt = new Date();
-    expiresAt.setDate(expiresAt.getDate() + 30);
+    const expiresAt = new Date(Date.now() + refreshMs);
     await this.prisma.refreshToken.create({
       data: { token: refreshToken, userId: user.id, expiresAt },
     });
 
-    return { accessToken, refreshToken, expiresIn: 900 };
+    return {
+      accessToken,
+      refreshToken,
+      expiresIn: accessSeconds,
+    };
   }
 
   async changePassword(userId: string, dto: ChangePasswordDto) {
@@ -392,11 +437,18 @@ export class AuthService {
       data: { password: hashed },
     });
 
+    // Invalidate existing sessions for security
+    await this.prisma.refreshToken.updateMany({
+      where: { userId },
+      data: { revokedAt: new Date() },
+    });
+
     return { message: 'Password changed successfully' };
   }
 
   private sanitizeUser(user: User): Partial<User> {
-    const { password, ...sanitized } = user;
+    const sanitized: Partial<User> = { ...user };
+    delete sanitized.password;
     return sanitized;
   }
 
@@ -412,13 +464,12 @@ export class AuthService {
     try {
       const result = await this.prisma.refreshToken.deleteMany({
         where: {
-          OR: [
-            { expiresAt: { lt: new Date() } },
-            { revokedAt: { not: null } },
-          ],
+          OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { not: null } }],
         },
       });
-      console.log(`Cleaned up ${result.count} expired or revoked refresh tokens.`);
+      console.log(
+        `Cleaned up ${result.count} expired or revoked refresh tokens.`,
+      );
     } catch (error) {
       console.error('Failed to cleanup refresh tokens', error);
     }

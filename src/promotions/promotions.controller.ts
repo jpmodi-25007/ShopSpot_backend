@@ -28,13 +28,21 @@ export class PromotionsController {
   @Post()
   async createPromotion(@Body() data: any) {
     const banner = await this.promotionsService.createPromotion(data);
-    return { success: true, data: banner, message: 'Promotion created successfully' };
+    return {
+      success: true,
+      data: banner,
+      message: 'Promotion created successfully',
+    };
   }
 
   @Put(':id')
   async updatePromotion(@Param('id') id: string, @Body() data: any) {
     const banner = await this.promotionsService.updatePromotion(id, data);
-    return { success: true, data: banner, message: 'Promotion updated successfully' };
+    return {
+      success: true,
+      data: banner,
+      message: 'Promotion updated successfully',
+    };
   }
 
   @Delete(':id')

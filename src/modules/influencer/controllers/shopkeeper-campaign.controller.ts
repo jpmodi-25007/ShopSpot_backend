@@ -1,4 +1,13 @@
-import { Controller, Get, Post, Body, UseGuards, Param, Patch, Delete } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Param,
+  Patch,
+  Delete,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { InfluencerService } from '../influencer.service';
@@ -29,7 +38,10 @@ export class ShopkeeperCampaignController {
 
   @Post()
   @ApiOperation({ summary: 'Create a new influencer campaign' })
-  createCampaign(@CurrentUser('id') userId: string, @Body() dto: CreateCampaignDto) {
+  createCampaign(
+    @CurrentUser('id') userId: string,
+    @Body() dto: CreateCampaignDto,
+  ) {
     return this.influencerService.createCampaign(userId, dto);
   }
 
@@ -41,7 +53,10 @@ export class ShopkeeperCampaignController {
 
   @Get(':id/bids')
   @ApiOperation({ summary: 'Get bids for a specific campaign' })
-  getCampaignBids(@CurrentUser('id') userId: string, @Param('id') campaignId: string) {
+  getCampaignBids(
+    @CurrentUser('id') userId: string,
+    @Param('id') campaignId: string,
+  ) {
     return this.influencerService.getCampaignBids(userId, campaignId);
   }
 
@@ -56,9 +71,14 @@ export class ShopkeeperCampaignController {
   counterBid(
     @CurrentUser('id') userId: string,
     @Param('id') bidId: string,
-    @Body() dto: CounterBidDto
+    @Body() dto: CounterBidDto,
   ) {
-    return this.influencerService.counterBid(userId, bidId, dto.counterAmount, dto.message);
+    return this.influencerService.counterBid(
+      userId,
+      bidId,
+      dto.counterAmount,
+      dto.message,
+    );
   }
 
   @Patch(':id')
@@ -66,7 +86,7 @@ export class ShopkeeperCampaignController {
   updateCampaign(
     @CurrentUser('id') userId: string,
     @Param('id') campaignId: string,
-    @Body() dto: Partial<CreateCampaignDto>
+    @Body() dto: Partial<CreateCampaignDto>,
   ) {
     return this.influencerService.updateCampaign(userId, campaignId, dto);
   }
@@ -75,7 +95,7 @@ export class ShopkeeperCampaignController {
   @ApiOperation({ summary: 'Delete an influencer campaign' })
   deleteCampaign(
     @CurrentUser('id') userId: string,
-    @Param('id') campaignId: string
+    @Param('id') campaignId: string,
   ) {
     return this.influencerService.deleteCampaign(userId, campaignId);
   }
@@ -90,7 +110,7 @@ export class ShopkeeperCampaignController {
   @ApiOperation({ summary: 'Release payment for a completed assignment' })
   releasePayment(
     @CurrentUser('id') userId: string,
-    @Param('id') assignmentId: string
+    @Param('id') assignmentId: string,
   ) {
     return this.influencerService.releasePayment(userId, assignmentId);
   }

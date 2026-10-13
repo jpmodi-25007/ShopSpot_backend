@@ -27,14 +27,20 @@ async function bootstrap() {
   app.use(compression());
 
   // CORS
-  const corsOrigins = configService.get<string>('CORS_ORIGINS', 'http://localhost:3000').split(',');
+  const corsOrigins = configService
+    .get<string>('CORS_ORIGINS', 'http://localhost:3000')
+    .split(',');
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g., mobile apps, curl)
       if (!origin) return callback(null, true);
-      
+
       // Allow any Vercel domain or explicit CORS_ORIGINS
-      if (origin.endsWith('vercel.app') || origin.includes('localhost') || corsOrigins.includes(origin)) {
+      if (
+        origin.endsWith('vercel.app') ||
+        origin.includes('localhost') ||
+        corsOrigins.includes(origin)
+      ) {
         callback(null, true);
       } else {
         callback(new Error('Not allowed by CORS'));

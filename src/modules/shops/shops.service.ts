@@ -133,7 +133,10 @@ export class ShopsService {
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
-        include: { category: true },
+        include: {
+          category: true,
+          mediaAssets: { orderBy: { isPrimary: 'desc' } },
+        },
       }),
       this.prisma.product.count({ where: { shopId, isActive: true } }),
     ]);

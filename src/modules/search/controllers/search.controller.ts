@@ -11,7 +11,9 @@ export class SearchController {
 
   @Public()
   @Get()
-  @ApiOperation({ summary: 'Global search across shops, products, and categories' })
+  @ApiOperation({
+    summary: 'Global search across shops, products, and categories',
+  })
   globalSearch(@Query() query: GlobalSearchDto) {
     return this.searchService.globalSearch(query);
   }

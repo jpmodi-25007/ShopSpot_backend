@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Body, Patch, Param, Delete, UseGuards, Req } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  Patch,
+  Param,
+  Delete,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { EventsService } from './events.service';
 import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../common/guards/roles.guard';
@@ -60,7 +70,7 @@ export class EventsController {
     const payload = { ...updateEventDto };
     if (payload.startDate) payload.startDate = new Date(payload.startDate);
     if (payload.endDate) payload.endDate = new Date(payload.endDate);
-    
+
     const data = await this.eventsService.update(id, payload);
     return {
       status: 'success',

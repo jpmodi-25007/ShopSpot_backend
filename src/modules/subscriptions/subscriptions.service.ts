@@ -9,10 +9,26 @@ export class SubscriptionsService {
 
   getPlans() {
     return [
-      { tier: SubscriptionTier.FREE, price: 0, features: ['Basic Analytics', '50 Products'] },
-      { tier: SubscriptionTier.BASIC, price: 499, features: ['Advanced Analytics', '500 Products'] },
-      { tier: SubscriptionTier.PREMIUM, price: 1499, features: ['Unlimited Products', 'Priority Support'] },
-      { tier: SubscriptionTier.ELITE, price: 2999, features: ['Dedicated Account Manager', 'Custom App Banner'] },
+      {
+        tier: SubscriptionTier.FREE,
+        price: 0,
+        features: ['Basic Analytics', '50 Products'],
+      },
+      {
+        tier: SubscriptionTier.BASIC,
+        price: 499,
+        features: ['Advanced Analytics', '500 Products'],
+      },
+      {
+        tier: SubscriptionTier.PREMIUM,
+        price: 1499,
+        features: ['Unlimited Products', 'Priority Support'],
+      },
+      {
+        tier: SubscriptionTier.ELITE,
+        price: 2999,
+        features: ['Dedicated Account Manager', 'Custom App Banner'],
+      },
     ];
   }
 
@@ -45,7 +61,8 @@ export class SubscriptionsService {
         planTier: dto.tier,
         price: dto.price,
         billingCycle: 'monthly',
-        features: this.getPlans().find((p) => p.tier === dto.tier)?.features || [],
+        features:
+          this.getPlans().find((p) => p.tier === dto.tier)?.features || [],
         startedAt: new Date(),
         expiresAt,
         isActive: true,

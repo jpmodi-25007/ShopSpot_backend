@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, UseGuards, Req, Param } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Req,
+  Param,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AnalyticsService } from '../analytics.service';
 import { TrackEventDto } from '../dto/analytics.dto';
@@ -56,7 +64,9 @@ export class AnalyticsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.SHOPKEEPER)
   @Get('influencer/:id')
-  @ApiOperation({ summary: 'Get influencer analytics by user id for admin/shopkeeper' })
+  @ApiOperation({
+    summary: 'Get influencer analytics by user id for admin/shopkeeper',
+  })
   getInfluencerAnalyticsById(@Param('id') id: string) {
     return this.analyticsService.getInfluencerAnalytics(id);
   }

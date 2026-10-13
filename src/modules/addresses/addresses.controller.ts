@@ -1,4 +1,14 @@
-import { Controller, Get, Post, Put, Delete, Body, Param, UseGuards, Request } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Delete,
+  Body,
+  Param,
+  UseGuards,
+  Request,
+} from '@nestjs/common';
 import { AddressesService } from './addresses.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../common/guards/roles.guard';
@@ -22,7 +32,11 @@ export class AddressesController {
   }
 
   @Put(':id')
-  updateAddress(@Request() req: any, @Param('id') addressId: string, @Body() data: any) {
+  updateAddress(
+    @Request() req: any,
+    @Param('id') addressId: string,
+    @Body() data: any,
+  ) {
     return this.addressesService.updateAddress(req.user.id, addressId, data);
   }
 

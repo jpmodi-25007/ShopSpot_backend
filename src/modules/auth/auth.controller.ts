@@ -195,8 +195,12 @@ export class AuthController {
         const legal = settings.legal || {};
         const roleData = legal[safeRole] || {};
         return {
-          terms: roleData.terms || `# Terms of Service\n\nWelcome to Findivo. By using our services as a ${safeRole}, you agree to our terms. *(Admin placeholder)*`,
-          privacy: roleData.privacy || `# Privacy Policy\n\nWe value your privacy as a ${safeRole}. *(Admin placeholder)*`,
+          terms:
+            roleData.terms ||
+            `# Terms of Service\n\nWelcome to Findivo. By using our services as a ${safeRole}, you agree to our terms. *(Admin placeholder)*`,
+          privacy:
+            roleData.privacy ||
+            `# Privacy Policy\n\nWe value your privacy as a ${safeRole}. *(Admin placeholder)*`,
         };
       }
     } catch (e) {

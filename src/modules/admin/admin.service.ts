@@ -1,6 +1,18 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
-import { VerifyShopDto, VerifyInfluencerDto, SuspendUserDto, PaginationDto, ResolveReportDto, CreateShopDto, CreateProductDto } from './dto/admin.dto';
+import {
+  VerifyShopDto,
+  VerifyInfluencerDto,
+  SuspendUserDto,
+  PaginationDto,
+  ResolveReportDto,
+  CreateShopDto,
+  CreateProductDto,
+} from './dto/admin.dto';
 import * as bcrypt from 'bcrypt';
 
 @Injectable()
@@ -59,7 +71,9 @@ export class AdminService {
   }
 
   async createShop(dto: CreateShopDto) {
-    let owner = await this.prisma.user.findUnique({ where: { email: dto.ownerEmail } });
+    let owner = await this.prisma.user.findUnique({
+      where: { email: dto.ownerEmail },
+    });
 
     if (!owner) {
       const defaultPassword = await bcrypt.hash('password123', 10);
@@ -72,13 +86,20 @@ export class AdminService {
         },
       });
     } else {
-      const existingShop = await this.prisma.shop.findUnique({ where: { ownerId: owner.id } });
+      const existingShop = await this.prisma.shop.findUnique({
+        where: { ownerId: owner.id },
+      });
       if (existingShop) {
-        throw new ConflictException(`User ${dto.ownerEmail} already owns a shop.`);
+        throw new ConflictException(
+          `User ${dto.ownerEmail} already owns a shop.`,
+        );
       }
     }
 
-    const baseSlug = dto.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const baseSlug = dto.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
     let slug = baseSlug;
     let slugCounter = 1;
     while (await this.prisma.shop.findUnique({ where: { slug } })) {
@@ -115,14 +136,17 @@ export class AdminService {
     let categoryId = null;
     if (dto.categoryName) {
       const category = await this.prisma.category.findUnique({
-        where: { slug: dto.categoryName.toLowerCase().replace(/\s+/g, '-') }
+        where: { slug: dto.categoryName.toLowerCase().replace(/\s+/g, '-') },
       });
       if (category) {
         categoryId = category.id;
       }
     }
 
-    const baseSlug = dto.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
+    const baseSlug = dto.name
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
     let slug = baseSlug;
     let slugCounter = 1;
     while (await this.prisma.product.findFirst({ where: { slug } })) {
@@ -184,7 +208,9 @@ export class AdminService {
   }
 
   async createInfluencer(dto: any) {
-    let user = await this.prisma.user.findUnique({ where: { email: dto.email } });
+    let user = await this.prisma.user.findUnique({
+      where: { email: dto.email },
+    });
 
     if (!user) {
       const defaultPassword = await bcrypt.hash('password123', 10);
@@ -198,8 +224,12 @@ export class AdminService {
       });
     }
 
-    const baseSlug = dto.name.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/(^-|-$)/g, '');
-    
+    const nameStr = String(dto.name || 'influencer');
+    const baseSlug = nameStr
+      .toLowerCase()
+      .replace(/[^a-z0-9]+/g, '-')
+      .replace(/(^-|-$)/g, '');
+
     return this.prisma.influencerProfile.create({
       data: {
         userId: user.id,
@@ -304,11 +334,13 @@ export class AdminService {
           displayName: user.name || 'New Influencer',
           username: `user_${user.id.substring(0, 8)}_${Date.now()}`,
           verificationStatus: dto.status as any,
-        }
+        },
       });
     }
 
-    const profile = await this.prisma.influencerProfile.findUnique({ where: { id: influencerId } });
+    const profile = await this.prisma.influencerProfile.findUnique({
+      where: { id: influencerId },
+    });
     if (!profile) throw new NotFoundException('Influencer profile not found');
 
     return this.prisma.influencerProfile.update({
@@ -346,7 +378,9 @@ export class AdminService {
   }
 
   async resolveReport(reportId: string, dto: ResolveReportDto) {
-    const report = await this.prisma.contentReport.findUnique({ where: { id: reportId } });
+    const report = await this.prisma.contentReport.findUnique({
+      where: { id: reportId },
+    });
     if (!report) throw new NotFoundException('Report not found');
 
     return this.prisma.contentReport.update({
@@ -361,8 +395,8 @@ export class AdminService {
       include: {
         customerOrders: { take: 10, orderBy: { createdAt: 'desc' } },
         sentMessages: { take: 5, orderBy: { createdAt: 'desc' } },
-        reviews: { take: 5, orderBy: { createdAt: 'desc' } }
-      }
+        reviews: { take: 5, orderBy: { createdAt: 'desc' } },
+      },
     });
     if (!user) throw new NotFoundException('User not found');
     return user;
@@ -374,8 +408,12 @@ export class AdminService {
       include: {
         owner: true,
         products: { take: 10, orderBy: { createdAt: 'desc' } },
-        orders: { take: 10, orderBy: { createdAt: 'desc' }, include: { customer: true } }
-      }
+        orders: {
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+          include: { customer: true },
+        },
+      },
     });
     if (!shop) throw new NotFoundException('Shop not found');
     return shop;
@@ -386,10 +424,15 @@ export class AdminService {
       where: { id: influencerId },
       include: {
         user: true,
-        assignments: { include: { campaign: { include: { product: true } } }, take: 10, orderBy: { createdAt: 'desc' } }
-      }
+        assignments: {
+          include: { campaign: { include: { product: true } } },
+          take: 10,
+          orderBy: { createdAt: 'desc' },
+        },
+      },
     });
-    if (!influencer) throw new NotFoundException('Influencer profile not found');
+    if (!influencer)
+      throw new NotFoundException('Influencer profile not found');
     return influencer;
   }
 
@@ -403,7 +446,7 @@ export class AdminService {
     return {
       totalFlagged,
       underReview,
-      resolved
+      resolved,
     };
   }
 
@@ -416,7 +459,7 @@ export class AdminService {
       verificationQueue,
       verifiedShops,
       dealsClosed,
-      analyticsEvents
+      analyticsEvents,
     ] = await Promise.all([
       this.prisma.shop.count(),
       this.prisma.user.count(),
@@ -425,82 +468,96 @@ export class AdminService {
         _sum: { total: true },
       }),
       this.prisma.negotiation.count({
-        where: { status: { in: ['PENDING', 'COUNTERED'] } }
+        where: { status: { in: ['PENDING', 'COUNTERED'] } },
       }),
       this.prisma.shop.findMany({
         where: { OR: [{ isKycVerified: false }, { isGstVerified: false }] },
         include: { owner: true },
         take: 5,
-        orderBy: { createdAt: 'asc' }
+        orderBy: { createdAt: 'asc' },
       }),
       this.prisma.shop.count({
-        where: { isKycVerified: true, isGstVerified: true }
+        where: { isKycVerified: true, isGstVerified: true },
       }),
       this.prisma.negotiation.count({
-        where: { status: 'ACCEPTED' }
+        where: { status: 'ACCEPTED' },
       }),
       this.prisma.analyticsEvent.findMany({
         where: {
           eventType: { in: ['shop_view', 'product_view'] },
-          createdAt: { gte: new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000) } // Last 8 weeks
+          createdAt: {
+            gte: new Date(Date.now() - 8 * 7 * 24 * 60 * 60 * 1000),
+          }, // Last 8 weeks
         },
-        select: { eventType: true, createdAt: true }
-      })
+        select: { eventType: true, createdAt: true },
+      }),
     ]);
 
-    // Format chart data (mocking inquiries for now since it's hard to distinguish without complex joins)
-    // We'll group views by week.
-    const weeks = Array(8).fill(0).map((_, i) => ({
-      name: `W${i + 1}`,
-      views: Math.floor(Math.random() * 2000) + 1000,
-      inquiries: Math.floor(Math.random() * 1000) + 500
+    // Group actual analytics events by week
+    const weekMap = new Map<string, { views: number; inquiries: number }>();
+    const now = Date.now();
+    for (let i = 7; i >= 0; i--) {
+      const weekLabel = `W${8 - i}`;
+      weekMap.set(weekLabel, { views: 0, inquiries: 0 });
+    }
+
+    analyticsEvents.forEach((event) => {
+      const ageMs = now - event.createdAt.getTime();
+      const weekNum = Math.floor(ageMs / (7 * 24 * 60 * 60 * 1000));
+      if (weekNum >= 0 && weekNum < 8) {
+        const label = `W${8 - weekNum}`;
+        const entry = weekMap.get(label);
+        if (entry) {
+          if (event.eventType === 'shop_view') entry.views += 1;
+          else if (event.eventType === 'product_view') entry.inquiries += 1;
+        }
+      }
+    });
+
+    const chartData = Array.from(weekMap.entries()).map(([name, data]) => ({
+      name,
+      ...data,
     }));
+
+    // Calculate real avg discount from accepted negotiations
+    const discountData = await this.prisma.negotiation.findMany({
+      where: { status: 'ACCEPTED', finalPrice: { not: null } },
+      select: { initialPrice: true, finalPrice: true },
+      take: 500,
+    });
+    let avgDiscount = 0;
+    if (discountData.length > 0) {
+      const totalDiscount = discountData.reduce((sum, n) => {
+        const initial = Number(n.initialPrice);
+        const final = Number(n.finalPrice);
+        if (initial > 0) return sum + ((initial - final) / initial) * 100;
+        return sum;
+      }, 0);
+      avgDiscount = Math.round((totalDiscount / discountData.length) * 10) / 10;
+    }
 
     return {
       totalShops,
-      monthlyActiveUsers: totalUsers, // Using total users for MVP
+      monthlyActiveUsers: totalUsers,
       platformRevenue: totalRevenueData._sum.total || 0,
       activeNegotiations,
-      chartData: weeks,
-      verificationQueue: verificationQueue.map(shop => ({
+      chartData,
+      verificationQueue: verificationQueue.map((shop) => ({
         name: shop.name,
         location: shop.city || 'India',
-        type: 'Retail'
+        type: 'Retail',
       })),
       verifiedShops,
       dealsClosed,
-      avgDiscount: 14.2 // Placeholder as actual avg discount requires complex aggregation
+      avgDiscount,
     };
   }
 
   async getAdminNotifications() {
     const notifications = await this.prisma.notification.findMany({
       take: 20,
-      orderBy: { createdAt: 'desc' }
+      orderBy: { createdAt: 'desc' },
     });
-    
-    // If no notifications exist, return some mock data to show functionality
-    if (notifications.length === 0) {
-      return [
-        {
-          id: 'mock-1',
-          type: 'SYSTEM',
-          title: 'High Load Warning',
-          body: 'Server resource utilization is above 90% in the ap-south-1 region.',
-          isRead: false,
-          createdAt: new Date(Date.now() - 10 * 60000).toISOString()
-        },
-        {
-          id: 'mock-2',
-          type: 'SYSTEM',
-          title: 'System Update Completed',
-          body: 'The Findivo backend has been successfully updated to v1.2.4.',
-          isRead: true,
-          createdAt: new Date(Date.now() - 24 * 3600000).toISOString()
-        }
-      ];
-    }
-    
     return notifications;
   }
 
@@ -532,7 +589,7 @@ export class AdminService {
       require2FA: true,
       sessionTimeout: 120,
       paymentGateway: 'stripe_live',
-      payoutSchedule: 'weekly'
+      payoutSchedule: 'weekly',
     };
   }
 

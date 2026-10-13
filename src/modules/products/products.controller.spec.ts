@@ -63,8 +63,13 @@ describe('ProductsController', () => {
 
       productsService.createProduct.mockResolvedValue(result as any);
 
-      expect(await controller.create('shop-1', createProductDto as any)).toEqual(result);
-      expect(productsService.createProduct).toHaveBeenCalledWith('shop-1', createProductDto);
+      expect(
+        await controller.create('shop-1', createProductDto as any),
+      ).toEqual(result);
+      expect(productsService.createProduct).toHaveBeenCalledWith(
+        'shop-1',
+        createProductDto,
+      );
     });
   });
 });

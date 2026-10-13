@@ -14,7 +14,7 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     if (!jwtSecret) {
       throw new Error(
         'JWT_ACCESS_SECRET environment variable is not set. ' +
-        'The application cannot start without a secure JWT secret.',
+          'The application cannot start without a secure JWT secret.',
       );
     }
     super({

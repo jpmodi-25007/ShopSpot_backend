@@ -31,20 +31,41 @@ export class AnalyticsService {
 
     // Aggregate current period (last 7 days) and previous period (8-14 days ago)
     const [
-      totalViews, prevViews, activeOrders, prevOrders, totalRevenueData,
-      totalProducts, totalInquiries, ratingData, reviewCount,
+      totalViews,
+      prevViews,
+      activeOrders,
+      prevOrders,
+      totalRevenueData,
+      totalProducts,
+      totalInquiries,
+      ratingData,
+      reviewCount,
     ] = await Promise.all([
       this.prisma.analyticsEvent.count({
-        where: { shopId: shop.id, eventType: 'shop_view', createdAt: { gte: sevenDaysAgo } },
+        where: {
+          shopId: shop.id,
+          eventType: 'shop_view',
+          createdAt: { gte: sevenDaysAgo },
+        },
       }),
       this.prisma.analyticsEvent.count({
-        where: { shopId: shop.id, eventType: 'shop_view', createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } },
+        where: {
+          shopId: shop.id,
+          eventType: 'shop_view',
+          createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo },
+        },
       }),
       this.prisma.order.count({
-        where: { shopId: shop.id, status: { notIn: ['DELIVERED', 'CANCELLED'] } },
+        where: {
+          shopId: shop.id,
+          status: { notIn: ['DELIVERED', 'CANCELLED'] },
+        },
       }),
       this.prisma.order.count({
-        where: { shopId: shop.id, createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo } },
+        where: {
+          shopId: shop.id,
+          createdAt: { gte: fourteenDaysAgo, lt: sevenDaysAgo },
+        },
       }),
       this.prisma.order.aggregate({
         where: { shopId: shop.id, status: 'DELIVERED' },
@@ -61,9 +82,17 @@ export class AnalyticsService {
     ]);
 
     // Calculate trend percentages
-    const viewsTrend = prevViews === 0 ? 0 : Math.round(((totalViews - prevViews) / prevViews) * 100);
-    const ordersTrend = prevOrders === 0 ? 0 : Math.round(((activeOrders - prevOrders) / prevOrders) * 100);
-    const avgRating = ratingData._avg.rating ? Math.round((ratingData._avg.rating) * 10) / 10 : 0;
+    const viewsTrend =
+      prevViews === 0
+        ? 0
+        : Math.round(((totalViews - prevViews) / prevViews) * 100);
+    const ordersTrend =
+      prevOrders === 0
+        ? 0
+        : Math.round(((activeOrders - prevOrders) / prevOrders) * 100);
+    const avgRating = ratingData._avg.rating
+      ? Math.round(ratingData._avg.rating * 10) / 10
+      : 0;
 
     return {
       totalViews,
@@ -80,7 +109,14 @@ export class AnalyticsService {
   }
 
   async getAdminAnalytics() {
-    const [totalUsers, totalShops, totalOrders, totalRevenueData, negotiations, topShops] = await Promise.all([
+    const [
+      totalUsers,
+      totalShops,
+      totalOrders,
+      totalRevenueData,
+      negotiations,
+      topShops,
+    ] = await Promise.all([
       this.prisma.user.count(),
       this.prisma.shop.count(),
       this.prisma.order.count(),
@@ -90,20 +126,22 @@ export class AnalyticsService {
       }),
       this.prisma.negotiation.findMany({
         take: 500,
-        orderBy: { createdAt: 'desc' }
+        orderBy: { createdAt: 'desc' },
       }),
       this.prisma.shop.findMany({
         take: 3,
-        orderBy: { rating: 'desc' }
-      })
+        orderBy: { rating: 'desc' },
+      }),
     ]);
 
     // Group negotiations by day of week (Mon, Tue, etc.)
     const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     const trendMap = new Map();
-    days.forEach(d => trendMap.set(d, { name: d, initiated: 0, completed: 0 }));
+    days.forEach((d) =>
+      trendMap.set(d, { name: d, initiated: 0, completed: 0 }),
+    );
 
-    negotiations.forEach(n => {
+    negotiations.forEach((n) => {
       const dayName = days[n.createdAt.getDay()];
       const entry = trendMap.get(dayName);
       entry.initiated += 1;
@@ -118,7 +156,7 @@ export class AnalyticsService {
       name: s.name,
       location: s.city || 'India',
       revenue: s.rating ? `${s.rating} Stars` : 'No Rating',
-      views: `${s.reviewCount} Reviews`
+      views: `${s.reviewCount} Reviews`,
     }));
 
     return {
@@ -129,10 +167,10 @@ export class AnalyticsService {
       revenueBreakdown: [
         { name: 'Subscription Fees', value: 65, color: '#0F766E' },
         { name: 'Ad Credits', value: 25, color: '#14B8A6' },
-        { name: 'Transaction Fees', value: 10, color: '#F59E0B' }
+        { name: 'Transaction Fees', value: 10, color: '#F59E0B' },
       ],
       negotiationTrends: Array.from(trendMap.values()),
-      topShops: topShopsData
+      topShops: topShopsData,
     };
   }
 
@@ -148,15 +186,27 @@ export class AnalyticsService {
       orderBy: { createdAt: 'desc' },
     });
 
-    const totalEarnings = assignments.reduce((sum, a) => sum + Number(a.agreedAmount || 0), 0);
-    const completedCampaigns = assignments.filter(a => a.contentStatus === 'APPROVED' || a.status === 'completed').length;
-    
+    const totalEarnings = assignments.reduce(
+      (sum, a) => sum + Number(a.agreedAmount || 0),
+      0,
+    );
+    const completedCampaigns = assignments.filter(
+      (a) => a.contentStatus === 'APPROVED' || a.status === 'completed',
+    ).length;
+
     // Group earnings by month for payouts mock
     const payoutsMap = new Map();
-    assignments.forEach(a => {
-      const monthYear = a.createdAt.toLocaleString('default', { month: 'short', year: 'numeric' });
+    assignments.forEach((a) => {
+      const monthYear = a.createdAt.toLocaleString('default', {
+        month: 'short',
+        year: 'numeric',
+      });
       if (!payoutsMap.has(monthYear)) {
-        payoutsMap.set(monthYear, { month: monthYear, amount: 0, status: a.paymentStatus === 'FULLY_PAID' ? 'Paid' : 'Pending' });
+        payoutsMap.set(monthYear, {
+          month: monthYear,
+          amount: 0,
+          status: a.paymentStatus === 'FULLY_PAID' ? 'Paid' : 'Pending',
+        });
       }
       payoutsMap.get(monthYear).amount += Number(a.agreedAmount || 0);
     });
@@ -164,15 +214,18 @@ export class AnalyticsService {
     return {
       totalEarnings,
       completedCampaigns,
-      activeBids: assignments.filter(a => a.status !== 'completed').length,
+      activeBids: assignments.filter((a) => a.status !== 'completed').length,
       payouts: Array.from(payoutsMap.values()),
-      portfolio: assignments.map(a => ({
+      portfolio: assignments.map((a) => ({
         id: a.id,
         campaignName: a.campaign.title,
         shopName: a.campaign.shop.name,
         amount: Number(a.agreedAmount),
-        imageUrl: a.proofImageUrl || a.campaign.shop.logoUrl || 'https://via.placeholder.com/150',
-      }))
+        imageUrl:
+          a.proofImageUrl ||
+          a.campaign.shop.logoUrl ||
+          'https://via.placeholder.com/150',
+      })),
     };
   }
 }

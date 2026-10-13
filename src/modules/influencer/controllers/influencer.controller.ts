@@ -1,7 +1,20 @@
-import { Controller, Get, Post, Put, Patch, Body, UseGuards, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Put,
+  Patch,
+  Body,
+  UseGuards,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { InfluencerService } from '../influencer.service';
-import { UpdateInfluencerProfileDto, SubmitBidDto } from '../dto/influencer.dto';
+import {
+  UpdateInfluencerProfileDto,
+  SubmitBidDto,
+} from '../dto/influencer.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -30,18 +43,25 @@ export class InfluencerController {
 
   @Put('profile')
   @ApiOperation({ summary: 'Update or create influencer profile' })
-  updateProfile(@CurrentUser('id') userId: string, @Body() dto: UpdateInfluencerProfileDto) {
+  updateProfile(
+    @CurrentUser('id') userId: string,
+    @Body() dto: UpdateInfluencerProfileDto,
+  ) {
     return this.influencerService.updateProfile(userId, dto);
   }
 
   @Get('campaigns')
   @ApiOperation({ summary: 'Get eligible campaigns for influencer' })
   getCampaigns(
-    @CurrentUser('id') userId: string, 
+    @CurrentUser('id') userId: string,
     @Query('industry') industry?: string,
     @Query('search') search?: string,
   ) {
-    return this.influencerService.getEligibleCampaigns(userId, industry, search);
+    return this.influencerService.getEligibleCampaigns(
+      userId,
+      industry,
+      search,
+    );
   }
 
   @Get('bids')
@@ -62,13 +82,19 @@ export class InfluencerController {
 
   @Post('bids/:id/accept-counter')
   @ApiOperation({ summary: 'Accept a counter offer' })
-  acceptCounterBid(@CurrentUser('id') userId: string, @Param('id') bidId: string) {
+  acceptCounterBid(
+    @CurrentUser('id') userId: string,
+    @Param('id') bidId: string,
+  ) {
     return this.influencerService.acceptCounterBid(userId, bidId);
   }
 
   @Post('bids/:id/reject-counter')
   @ApiOperation({ summary: 'Reject a counter offer' })
-  rejectCounterBid(@CurrentUser('id') userId: string, @Param('id') bidId: string) {
+  rejectCounterBid(
+    @CurrentUser('id') userId: string,
+    @Param('id') bidId: string,
+  ) {
     return this.influencerService.rejectCounterBid(userId, bidId);
   }
 
@@ -81,10 +107,14 @@ export class InfluencerController {
   @Patch('assignments/:id/submit')
   @ApiOperation({ summary: 'Submit campaign deliverables' })
   submitDeliverable(
-    @CurrentUser('id') userId: string, 
+    @CurrentUser('id') userId: string,
     @Param('id') assignmentId: string,
-    @Body('contentUrl') contentUrl: string
+    @Body('contentUrl') contentUrl: string,
   ) {
-    return this.influencerService.submitDeliverable(userId, assignmentId, contentUrl);
+    return this.influencerService.submitDeliverable(
+      userId,
+      assignmentId,
+      contentUrl,
+    );
   }
 }

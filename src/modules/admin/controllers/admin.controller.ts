@@ -1,7 +1,23 @@
-import { Controller, Get, Post, Body, UseGuards, Param, Query } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Body,
+  UseGuards,
+  Param,
+  Query,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AdminService } from '../admin.service';
-import { VerifyShopDto, VerifyInfluencerDto, SuspendUserDto, PaginationDto, ResolveReportDto, CreateShopDto, CreateProductDto } from '../dto/admin.dto';
+import {
+  VerifyShopDto,
+  VerifyInfluencerDto,
+  SuspendUserDto,
+  PaginationDto,
+  ResolveReportDto,
+  CreateShopDto,
+  CreateProductDto,
+} from '../dto/admin.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -95,7 +111,10 @@ export class AdminController {
 
   @Post('influencers/:id/verify')
   @ApiOperation({ summary: 'Verify an influencer' })
-  verifyInfluencer(@Param('id') influencerId: string, @Body() dto: VerifyInfluencerDto) {
+  verifyInfluencer(
+    @Param('id') influencerId: string,
+    @Body() dto: VerifyInfluencerDto,
+  ) {
     return this.adminService.verifyInfluencer(influencerId, dto);
   }
 

@@ -37,7 +37,12 @@ export class ChatsController {
     @CurrentUser('id') userId: string,
     @Body() dto: CreateRoomDto,
   ) {
-    return this.chatsService.createOrGetRoom(userId, dto.targetUserId, dto.contextType, dto.contextId);
+    return this.chatsService.createOrGetRoom(
+      userId,
+      dto.targetUserId,
+      dto.contextType,
+      dto.contextId,
+    );
   }
 
   @Get('rooms')
@@ -46,7 +51,10 @@ export class ChatsController {
   }
 
   @Get('rooms/:roomId/messages')
-  async getMessages(@CurrentUser('id') userId: string, @Param('roomId') roomId: string) {
+  async getMessages(
+    @CurrentUser('id') userId: string,
+    @Param('roomId') roomId: string,
+  ) {
     return this.chatsService.getMessages(userId, roomId);
   }
 

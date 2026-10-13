@@ -2,6 +2,8 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Delete,
   Body,
   Param,
   Query,
@@ -49,6 +51,7 @@ export class ReservationsController {
   }
 
   @Post('reservations/:id/cancel')
+  @Delete('reservations/:id')
   @Roles(UserRole.CUSTOMER)
   cancel(
     @Param('id', ParseUUIDPipe) id: string,
@@ -92,5 +95,20 @@ export class ReservationsController {
     @Query('limit') limit = 20,
   ) {
     return this.reservationsService.getShopReservations(userId, +page, +limit);
+  }
+
+  @Patch('reservations/:id/reschedule')
+  @Post('reservations/:id/reschedule')
+  @Roles(UserRole.CUSTOMER)
+  reschedule(
+    @Param('id', ParseUUIDPipe) id: string,
+    @CurrentUser('id') userId: string,
+    @Body() body: { newDateTime: string },
+  ) {
+    return this.reservationsService.rescheduleReservation(
+      id,
+      userId,
+      new Date(body.newDateTime),
+    );
   }
 }

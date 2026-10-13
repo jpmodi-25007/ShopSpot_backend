@@ -1,4 +1,8 @@
-import { Injectable, Logger, InternalServerErrorException } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  InternalServerErrorException,
+} from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { v2 as cloudinary } from 'cloudinary';
 
@@ -18,18 +22,30 @@ export class CloudinaryService {
   /**
    * Generates a signed signature for secure direct client uploads to Cloudinary.
    */
-  generateSignature(folderName: string): { signature: string; timestamp: number; apiKey: string; cloudName: string; folder: string } {
+  generateSignature(folderName: string): {
+    signature: string;
+    timestamp: number;
+    apiKey: string;
+    cloudName: string;
+    folder: string;
+  } {
     const timestamp = Math.round(new Date().getTime() / 1000);
     const apiSecret = this.configService.get<string>('CLOUDINARY_API_SECRET');
     const apiKey = this.configService.get<string>('CLOUDINARY_API_KEY') || '';
-    const cloudName = this.configService.get<string>('CLOUDINARY_CLOUD_NAME') || '';
-    
-    const rootFolder = this.configService.get<string>('CLOUDINARY_FOLDER') || 'shopspot';
+    const cloudName =
+      this.configService.get<string>('CLOUDINARY_CLOUD_NAME') || '';
+
+    const rootFolder =
+      this.configService.get<string>('CLOUDINARY_FOLDER') || 'shopspot';
     const finalFolder = `${rootFolder}/${folderName}`;
 
     if (!apiSecret) {
-      this.logger.error('CLOUDINARY_API_SECRET is missing from environment variables');
-      throw new InternalServerErrorException('Cloudinary configuration is incomplete');
+      this.logger.error(
+        'CLOUDINARY_API_SECRET is missing from environment variables',
+      );
+      throw new InternalServerErrorException(
+        'Cloudinary configuration is incomplete',
+      );
     }
 
     const signature = cloudinary.utils.api_sign_request(
@@ -52,7 +68,10 @@ export class CloudinaryService {
       const result = await cloudinary.uploader.destroy(publicId);
       return result.result === 'ok' || result.result === 'not found';
     } catch (error) {
-      this.logger.error(`Failed to delete Cloudinary asset ${publicId}:`, error);
+      this.logger.error(
+        `Failed to delete Cloudinary asset ${publicId}:`,
+        error,
+      );
       return false;
     }
   }

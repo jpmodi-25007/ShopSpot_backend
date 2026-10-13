@@ -15,10 +15,15 @@ import { ChatsService } from '../../chats/chats.service';
 
 @WebSocketGateway({
   cors: {
-    origin: (origin: string, callback: (err: Error | null, allow?: boolean) => void) => {
+    origin: (
+      origin: string,
+      callback: (err: Error | null, allow?: boolean) => void,
+    ) => {
       // Allow requests with no origin (mobile apps, server-to-server)
       if (!origin) return callback(null, true);
-      const allowedOrigins = (process.env.CORS_ORIGINS || 'http://localhost:3000').split(',');
+      const allowedOrigins = (
+        process.env.CORS_ORIGINS || 'http://localhost:3000'
+      ).split(',');
       if (
         origin.endsWith('vercel.app') ||
         origin.includes('localhost') ||
@@ -46,7 +51,10 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
   async handleConnection(client: Socket) {
     try {
-      const authHeader = client.handshake.auth.token || client.handshake.headers.authorization || client.handshake.query.token;
+      const authHeader =
+        client.handshake.auth.token ||
+        client.handshake.headers.authorization ||
+        client.handshake.query.token;
       if (!authHeader) throw new Error('No token provided');
 
       const token = authHeader.replace('Bearer ', '');
@@ -58,7 +66,9 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
 
       // Join a personal room so we can send directed events
       await client.join(`user:${payload.sub}`);
-      this.logger.debug(`Client connected: ${client.id} (User: ${payload.sub})`);
+      this.logger.debug(
+        `Client connected: ${client.id} (User: ${payload.sub})`,
+      );
     } catch (error) {
       this.logger.warn(`Unauthorized connection attempt: ${client.id}`);
       client.disconnect();
@@ -89,7 +99,10 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   @SubscribeMessage('negotiation:counter')
-  handleCounter(@ConnectedSocket() client: Socket, @MessageBody() payload: any) {
+  handleCounter(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: any,
+  ) {
     // Expected payload: { customerId, negotiationId, price }
     // Broadcast to the customer's room
     this.emitToUser(payload.customerId, 'negotiation:counter_offer', {
@@ -99,16 +112,49 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   }
 
   // --- Real-time Handlers for Chat ---
-  
+
+  @SubscribeMessage('joinRoom')
+  handleJoinRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { roomId: string },
+  ) {
+    if (payload?.roomId) {
+      client.join(`room:${payload.roomId}`);
+      this.logger.debug(
+        `User ${client.data.userId} joined room:${payload.roomId}`,
+      );
+    }
+  }
+
+  @SubscribeMessage('leaveRoom')
+  handleLeaveRoom(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { roomId: string },
+  ) {
+    if (payload?.roomId) {
+      client.leave(`room:${payload.roomId}`);
+      this.logger.debug(
+        `User ${client.data.userId} left room:${payload.roomId}`,
+      );
+    }
+  }
+
   @SubscribeMessage('sendMessage')
-  async handleSendMessage(@ConnectedSocket() client: Socket, @MessageBody() payload: { roomId: string, content: string }) {
+  async handleSendMessage(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: { roomId: string; content: string },
+  ) {
     try {
       const userId = client.data.userId;
-      const message = await this.chatsService.sendMessage(userId, payload.roomId, payload.content);
+      const message = await this.chatsService.sendMessage(
+        userId,
+        payload.roomId,
+        payload.content,
+      );
       const room = await this.chatsService.getRoomById(payload.roomId);
-      
+
       if (room) {
-        // Broadcast to both participants
+        // Broadcast to both participants via personal rooms
         this.emitToUser(room.participantA, 'newMessage', message);
         this.emitToUser(room.participantB, 'newMessage', message);
       }
