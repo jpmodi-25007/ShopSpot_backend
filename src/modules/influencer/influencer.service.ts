@@ -542,7 +542,7 @@ export class InfluencerService {
 
     this.notificationsService.sendNotification(
       bid.campaign.shopkeeperId,
-      NotificationType.BID_COUNTERED,
+      NotificationType.BID_REJECTED,
       'Counter Offer Rejected',
       `The influencer rejected your counter offer.`,
       { campaignId: bid.campaignId, bidId },

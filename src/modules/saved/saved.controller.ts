@@ -14,8 +14,7 @@ import { Roles } from '../../common/decorators/roles.decorator';
 import { UserRole } from '@prisma/client';
 
 @Controller('saved')
-@UseGuards(JwtAuthGuard, RolesGuard)
-@Roles(UserRole.CUSTOMER) // Usually CUSTOMERs save products/shops
+@UseGuards(JwtAuthGuard)
 export class SavedController {
   constructor(private readonly savedService: SavedService) {}
 

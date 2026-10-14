@@ -49,12 +49,18 @@ export class SavedService {
       where: { userId },
       include: {
         product: {
-          include: { shop: true },
+          include: {
+            mediaAssets: true,
+            shop: { select: { id: true, name: true, slug: true, city: true, rating: true, logoUrl: true } },
+          },
         },
       },
       orderBy: { createdAt: 'desc' },
     });
-    return saved.map((s: any) => s.product);
+    return saved.map((s: any) => ({
+      ...s.product,
+      images: s.product.mediaAssets?.map((m: any) => m.url) || [],
+    }));
   }
 
   async saveShop(userId: string, shopId: string) {

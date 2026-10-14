@@ -323,12 +323,15 @@ export class AdminService {
   }
 
   async verifyInfluencer(influencerId: string, dto: VerifyInfluencerDto) {
+    let userId: string;
+    let result: any;
+
     if (influencerId.startsWith('temp_')) {
-      const userId = influencerId.replace('temp_', '');
+      userId = influencerId.replace('temp_', '');
       const user = await this.prisma.user.findUnique({ where: { id: userId } });
       if (!user) throw new NotFoundException('User not found');
 
-      return this.prisma.influencerProfile.create({
+      result = await this.prisma.influencerProfile.create({
         data: {
           userId: user.id,
           displayName: user.name || 'New Influencer',
@@ -336,19 +339,51 @@ export class AdminService {
           verificationStatus: dto.status as any,
         },
       });
+    } else {
+      const profile = await this.prisma.influencerProfile.findUnique({
+        where: { id: influencerId },
+      });
+      if (!profile) throw new NotFoundException('Influencer profile not found');
+      userId = profile.userId;
+
+      result = await this.prisma.influencerProfile.update({
+        where: { id: influencerId },
+        data: {
+          verificationStatus: dto.status as any,
+        },
+      });
     }
 
-    const profile = await this.prisma.influencerProfile.findUnique({
-      where: { id: influencerId },
-    });
-    if (!profile) throw new NotFoundException('Influencer profile not found');
+    // Notify influencer of verification status or requested information
+    try {
+      const title =
+        dto.status === 'VERIFIED'
+          ? 'Profile Verified!'
+          : dto.status === 'REJECTED'
+            ? 'Verification Rejected'
+            : 'Verification: Additional Info Requested';
+      const body =
+        dto.note ||
+        (dto.status === 'VERIFIED'
+          ? 'Your influencer profile has been verified successfully.'
+          : dto.status === 'REJECTED'
+            ? 'Your verification request was rejected. Please review profile details.'
+            : 'Admin has requested additional verification documents.');
 
-    return this.prisma.influencerProfile.update({
-      where: { id: influencerId },
-      data: {
-        verificationStatus: dto.status as any,
-      },
-    });
+      await this.prisma.notification.create({
+        data: {
+          userId,
+          type: 'SYSTEM',
+          title,
+          body,
+          data: { status: dto.status, note: dto.note },
+        },
+      });
+    } catch {
+      // Non-blocking notification failure
+    }
+
+    return result;
   }
 
   async getReports(query: PaginationDto) {

@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
   NotFoundException,
   BadRequestException,
+  Logger,
 } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
@@ -36,6 +37,7 @@ export interface AuthResponse {
 
 @Injectable()
 export class AuthService {
+  private readonly logger = new Logger(AuthService.name);
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwtService: JwtService,
@@ -217,13 +219,12 @@ export class AuthService {
         const resetCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
         // Persist the code so it can be validated on the reset endpoint.
-        // Requires `resetCode String?` and `resetCodeExpiresAt DateTime?` columns on User.
         await this.prisma.user.update({
           where: { id: user.id },
           data: {
             resetCode,
             resetCodeExpiresAt,
-          } as any,
+          },
         });
 
         await transporter.sendMail({
@@ -234,12 +235,13 @@ export class AuthService {
           html: `<p>Your password reset code is: <b>${resetCode}</b></p><p>This code expires in <b>15 minutes</b>.</p><p>If you did not request this, please ignore this email.</p>`,
         });
 
-        console.log(`Reset email sent successfully to ${dto.emailOrPhone}`);
+        this.logger.log(`Reset email sent to ${dto.emailOrPhone}`);
       } catch (error) {
         console.error('Error sending reset email:', error);
       }
     } else if (user && !isEmail) {
-      console.log(`Sending password reset SMS to ${dto.emailOrPhone}`);
+      // SMS integration: use Twilio/MSG91 here with resetCode
+      this.logger.log(`SMS reset code generated for ${dto.emailOrPhone}`);
     }
 
     return { message: 'Instructions sent successfully!' };
@@ -342,10 +344,9 @@ export class AuthService {
     }
     // Store as a pending request rather than immediately changing the role.
     // An admin must approve the upgrade before the user gains elevated permissions.
-    // Requires a `pendingRole String?` column on User (add to Prisma schema).
     await this.prisma.user.update({
       where: { id: userId },
-      data: { pendingRole: upperRole } as any,
+      data: { pendingRole: upperRole },
     });
   }
 
@@ -467,11 +468,11 @@ export class AuthService {
           OR: [{ expiresAt: { lt: new Date() } }, { revokedAt: { not: null } }],
         },
       });
-      console.log(
+      this.logger.log(
         `Cleaned up ${result.count} expired or revoked refresh tokens.`,
       );
     } catch (error) {
-      console.error('Failed to cleanup refresh tokens', error);
+      this.logger.error('Failed to cleanup refresh tokens', error);
     }
   }
 }

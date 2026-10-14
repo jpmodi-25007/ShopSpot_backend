@@ -18,10 +18,13 @@ export class SearchService {
         take: 5,
         select: {
           id: true,
+          ownerId: true,
           name: true,
+          slug: true,
           logoUrl: true,
           rating: true,
           city: true,
+          address: true,
         },
       }),
       this.prisma.product.findMany({
@@ -30,9 +33,19 @@ export class SearchService {
         select: {
           id: true,
           name: true,
+          description: true,
+          mrp: true,
           sellingPrice: true,
           mediaAssets: true,
           shopId: true,
+          shop: {
+            select: {
+              id: true,
+              name: true,
+              city: true,
+              logoUrl: true,
+            },
+          },
         },
       }),
       this.prisma.category.findMany({

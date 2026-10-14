@@ -23,6 +23,11 @@ export class VerifyInfluencerDto {
   @ApiProperty({ enum: VerificationStatus })
   @IsEnum(VerificationStatus)
   status: VerificationStatus;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  note?: string;
 }
 
 export class SuspendUserDto {
