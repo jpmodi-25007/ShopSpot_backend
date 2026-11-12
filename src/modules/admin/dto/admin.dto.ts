@@ -3,6 +3,7 @@ import {
   IsBoolean,
   IsOptional,
   IsEnum,
+  IsEmail,
   IsNumber,
   Min,
 } from 'class-validator';
@@ -181,7 +182,7 @@ export class CreateUserDto {
   name: string;
 
   @ApiProperty()
-  @IsString()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
   email: string;
 
   @ApiPropertyOptional()

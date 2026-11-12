@@ -155,7 +155,7 @@ export class AnalyticsService {
       rank: `#${idx + 1}`,
       name: s.name,
       location: s.city || 'India',
-      revenue: s.rating ? `${s.rating} Stars` : 'No Rating',
+      revenue: s.rating ? `${String(s.rating)} Stars` : 'No Rating',
       views: `${s.reviewCount} Reviews`,
     }));
 

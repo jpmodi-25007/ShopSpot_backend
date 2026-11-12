@@ -15,6 +15,11 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '@prisma/client';
+import {
+  StartNegotiationDto,
+  CustomerCounterDto,
+  ShopkeeperCounterDto,
+} from './dto/negotiations.dto';
 
 @ApiTags('Negotiations')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -25,10 +30,7 @@ export class NegotiationsController {
 
   @Post('negotiations')
   @Roles(UserRole.CUSTOMER)
-  start(
-    @CurrentUser('id') userId: string,
-    @Body() body: { productId: string; offeredPrice: number; message?: string },
-  ) {
+  start(@CurrentUser('id') userId: string, @Body() body: StartNegotiationDto) {
     return this.negotiationsService.startNegotiation(userId, body);
   }
 
@@ -56,7 +58,7 @@ export class NegotiationsController {
   counter(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
-    @Body() body: { counterPrice: number },
+    @Body() body: CustomerCounterDto,
   ) {
     return this.negotiationsService.counterOffer(id, userId, body.counterPrice);
   }
@@ -101,7 +103,7 @@ export class NegotiationsController {
   shopCounter(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
-    @Body() body: { counterPrice: number; message?: string },
+    @Body() body: ShopkeeperCounterDto,
   ) {
     return this.negotiationsService.shopkeeperCounter(
       id,

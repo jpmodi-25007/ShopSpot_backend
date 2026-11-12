@@ -60,6 +60,31 @@ export class CloudinaryService {
   }
 
   /**
+   * Uploads an in-memory image buffer to Cloudinary (server-side upload used by
+   * the admin panel) and returns its public URL and id.
+   */
+  uploadImage(buffer: Buffer): Promise<{ url: string; publicId: string }> {
+    const rootFolder =
+      this.configService.get<string>('CLOUDINARY_FOLDER') || 'shopspot';
+
+    return new Promise((resolve, reject) => {
+      const stream = cloudinary.uploader.upload_stream(
+        { folder: `${rootFolder}/admin`, resource_type: 'image' },
+        (error, result) => {
+          if (error || !result) {
+            this.logger.error('Cloudinary upload failed', error);
+            return reject(
+              new InternalServerErrorException('Failed to upload image'),
+            );
+          }
+          resolve({ url: result.secure_url, publicId: result.public_id });
+        },
+      );
+      stream.end(buffer);
+    });
+  }
+
+  /**
    * Deletes an asset from Cloudinary using the Admin API.
    */
   async deleteAsset(publicId: string): Promise<boolean> {

@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  HttpException,
+  HttpStatus,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { SubscribeDto } from './dto/subscriptions.dto';
 import { SubscriptionTier } from '@prisma/client';
@@ -38,8 +43,23 @@ export class SubscriptionsService {
     });
     if (!shop) throw new NotFoundException('Shop not found');
 
-    // In a real application, you would integrate a payment gateway (Razorpay/Stripe) here.
-    // For now, we simulate a successful payment and upgrade the shop's tier directly.
+    // Plan name and price always come from the server-side catalogue, never
+    // from the request body.
+    const plan = this.getPlans().find((p) => p.tier === dto.tier);
+    if (!plan) throw new NotFoundException('Plan not found');
+
+    // No payment gateway is integrated yet, so a paid tier must not be granted
+    // for free. Set ALLOW_SIMULATED_SUBSCRIPTIONS=true (development only) to
+    // keep the simulated-payment behaviour.
+    if (
+      plan.price > 0 &&
+      process.env.ALLOW_SIMULATED_SUBSCRIPTIONS !== 'true'
+    ) {
+      throw new HttpException(
+        'Payment is required to activate a paid plan',
+        HttpStatus.PAYMENT_REQUIRED,
+      );
+    }
 
     const expiresAt = new Date();
     expiresAt.setMonth(expiresAt.getMonth() + 1); // 1 month validity
@@ -57,12 +77,11 @@ export class SubscriptionsService {
     return this.prisma.subscription.create({
       data: {
         shopId: shop.id,
-        planName: dto.planName,
+        planName: dto.planName || `${plan.tier} Plan`,
         planTier: dto.tier,
-        price: dto.price,
+        price: plan.price,
         billingCycle: 'monthly',
-        features:
-          this.getPlans().find((p) => p.tier === dto.tier)?.features || [],
+        features: plan.features,
         startedAt: new Date(),
         expiresAt,
         isActive: true,

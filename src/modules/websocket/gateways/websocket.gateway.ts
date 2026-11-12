@@ -12,6 +12,11 @@ import { JwtService } from '@nestjs/jwt';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from '@nestjs/common';
 import { ChatsService } from '../../chats/chats.service';
+import { PrismaService } from '../../../prisma/prisma.service';
+import {
+  isOriginAllowed,
+  parseCorsOrigins,
+} from '../../../common/helpers/cors.helper';
 
 @WebSocketGateway({
   cors: {
@@ -21,14 +26,8 @@ import { ChatsService } from '../../chats/chats.service';
     ) => {
       // Allow requests with no origin (mobile apps, server-to-server)
       if (!origin) return callback(null, true);
-      const allowedOrigins = (
-        process.env.CORS_ORIGINS || 'http://localhost:3000'
-      ).split(',');
-      if (
-        origin.endsWith('vercel.app') ||
-        origin.includes('localhost') ||
-        allowedOrigins.includes(origin)
-      ) {
+      const allowedOrigins = parseCorsOrigins(process.env.CORS_ORIGINS);
+      if (isOriginAllowed(origin, allowedOrigins)) {
         callback(null, true);
       } else {
         callback(new Error('WebSocket origin not allowed by CORS'));
@@ -47,6 +46,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
     private readonly jwtService: JwtService,
     private readonly configService: ConfigService,
     private readonly chatsService: ChatsService,
+    private readonly prisma: PrismaService,
   ) {}
 
   async handleConnection(client: Socket) {
@@ -57,7 +57,7 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
         client.handshake.query.token;
       if (!authHeader) throw new Error('No token provided');
 
-      const token = authHeader.replace('Bearer ', '');
+      const token = String(authHeader).replace('Bearer ', '');
       const secret = this.configService.get<string>('JWT_ACCESS_SECRET');
       const payload = this.jwtService.verify(token, { secret });
 
@@ -89,41 +89,79 @@ export class AppGateway implements OnGatewayConnection, OnGatewayDisconnect {
   // --- Sample Real-time Handlers for Negotiations ---
 
   @SubscribeMessage('negotiation:offer')
-  handleOffer(@ConnectedSocket() client: Socket, @MessageBody() payload: any) {
-    // Expected payload: { shopkeeperId, negotiationId, price }
-    // Broadcast to the shopkeeper's room
-    this.emitToUser(payload.shopkeeperId, 'negotiation:new_offer', {
+  async handleOffer(
+    @ConnectedSocket() client: Socket,
+    @MessageBody() payload: any,
+  ) {
+    // Expected payload: { negotiationId, price }
+    // The recipient is derived from the negotiation itself, never from the
+    // payload, so a client cannot push events to arbitrary users.
+    const negotiation = await this.findNegotiation(payload?.negotiationId);
+    if (!negotiation || negotiation.customerId !== client.data.userId) return;
+
+    this.emitToUser(negotiation.shop.ownerId, 'negotiation:new_offer', {
       ...payload,
+      shopkeeperId: negotiation.shop.ownerId,
       customerId: client.data.userId,
     });
   }
 
   @SubscribeMessage('negotiation:counter')
-  handleCounter(
+  async handleCounter(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: any,
   ) {
-    // Expected payload: { customerId, negotiationId, price }
-    // Broadcast to the customer's room
-    this.emitToUser(payload.customerId, 'negotiation:counter_offer', {
+    // Expected payload: { negotiationId, price }
+    const negotiation = await this.findNegotiation(payload?.negotiationId);
+    if (!negotiation || negotiation.shop.ownerId !== client.data.userId) return;
+
+    this.emitToUser(negotiation.customerId, 'negotiation:counter_offer', {
       ...payload,
+      customerId: negotiation.customerId,
       shopkeeperId: client.data.userId,
     });
+  }
+
+  private async findNegotiation(negotiationId: unknown) {
+    if (typeof negotiationId !== 'string' || !negotiationId) return null;
+    try {
+      return await this.prisma.negotiation.findUnique({
+        where: { id: negotiationId },
+        select: {
+          customerId: true,
+          shop: { select: { ownerId: true } },
+        },
+      });
+    } catch {
+      return null;
+    }
   }
 
   // --- Real-time Handlers for Chat ---
 
   @SubscribeMessage('joinRoom')
-  handleJoinRoom(
+  async handleJoinRoom(
     @ConnectedSocket() client: Socket,
     @MessageBody() payload: { roomId: string },
   ) {
-    if (payload?.roomId) {
-      client.join(`room:${payload.roomId}`);
-      this.logger.debug(
-        `User ${client.data.userId} joined room:${payload.roomId}`,
-      );
+    if (!payload?.roomId) return;
+
+    // Only participants of a chat room may join its socket room.
+    const room = await this.chatsService
+      .getRoomById(payload.roomId)
+      .catch(() => null);
+    if (
+      !room ||
+      (room.participantA !== client.data.userId &&
+        room.participantB !== client.data.userId)
+    ) {
+      return;
     }
+
+    await client.join(`room:${payload.roomId}`);
+    this.logger.debug(
+      `User ${client.data.userId} joined room:${payload.roomId}`,
+    );
   }
 
   @SubscribeMessage('leaveRoom')

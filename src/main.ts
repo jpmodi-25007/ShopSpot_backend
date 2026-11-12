@@ -9,6 +9,11 @@ import compression = require('compression');
 
 import { NestExpressApplication } from '@nestjs/platform-express';
 import { join } from 'path';
+import { Logger } from '@nestjs/common';
+import {
+  isOriginAllowed,
+  parseCorsOrigins,
+} from './common/helpers/cors.helper';
 
 async function bootstrap() {
   const app = await NestFactory.create<NestExpressApplication>(AppModule, {
@@ -26,24 +31,25 @@ async function bootstrap() {
   app.use(helmet());
   app.use(compression());
 
+  // The API runs behind a reverse proxy (Render). Trusting one hop makes
+  // req.ip (used by the rate limiter) the real client IP instead of the proxy.
+  app.set('trust proxy', configService.get('TRUST_PROXY', 1));
+
   // CORS
-  const corsOrigins = configService
-    .get<string>('CORS_ORIGINS', 'http://localhost:3000')
-    .split(',');
+  const corsOrigins = parseCorsOrigins(
+    configService.get<string>('CORS_ORIGINS', 'http://localhost:3000'),
+  );
   app.enableCors({
     origin: (origin, callback) => {
       // Allow requests with no origin (e.g., mobile apps, curl)
       if (!origin) return callback(null, true);
 
-      // Allow any Vercel domain or explicit CORS_ORIGINS
-      if (
-        origin.endsWith('vercel.app') ||
-        origin.includes('localhost') ||
-        corsOrigins.includes(origin)
-      ) {
+      if (isOriginAllowed(origin, corsOrigins)) {
         callback(null, true);
       } else {
-        callback(new Error('Not allowed by CORS'));
+        // Answer without CORS headers (the browser blocks the response) instead of
+        // raising an error, which surfaced as HTTP 500 and noisy error logs.
+        callback(null, false);
       }
     },
     credentials: true,
@@ -97,10 +103,21 @@ async function bootstrap() {
     });
   }
 
+  // Graceful shutdown: close Prisma / sockets on SIGTERM (Render deploys).
+  app.enableShutdownHooks();
+
   const port = configService.get<number>('PORT', 3001);
   await app.listen(port, '0.0.0.0');
   console.log(`\n🚀 Findivo API running at: http://localhost:${port}/api/v1`);
   console.log(`📚 Swagger docs at: http://localhost:${port}/api/docs\n`);
 }
+
+// A failed fire-and-forget promise (for example a push notification) must be
+// logged, not take the whole API process down.
+process.on('unhandledRejection', (reason) => {
+  new Logger('UnhandledRejection').error(
+    reason instanceof Error ? (reason.stack ?? reason.message) : String(reason),
+  );
+});
 
 bootstrap();

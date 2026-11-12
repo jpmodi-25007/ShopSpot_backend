@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
@@ -15,6 +16,15 @@ export class ChatsService {
     contextType?: string,
     contextId?: string,
   ) {
+    if (targetUserId === userId) {
+      throw new BadRequestException('You cannot start a chat with yourself');
+    }
+    const target = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: { id: true },
+    });
+    if (!target) throw new NotFoundException('User not found');
+
     let room = await this.prisma.chatRoom.findFirst({
       where: {
         OR: [

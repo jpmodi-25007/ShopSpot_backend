@@ -1,4 +1,7 @@
 import { Module } from '@nestjs/common';
+import { APP_FILTER, APP_INTERCEPTOR } from '@nestjs/core';
+import { PrismaExceptionFilter } from './common/filters/prisma-exception.filter';
+import { StripSecretsInterceptor } from './common/interceptors/strip-secrets.interceptor';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { ScheduleModule } from '@nestjs/schedule';
@@ -90,6 +93,12 @@ import { ChatsModule } from './modules/chats/chats.module';
     PromotionsModule,
     EventsModule,
     ChatsModule,
+  ],
+  providers: [
+    // Global safety net: password hashes / reset data never leave the API.
+    { provide: APP_INTERCEPTOR, useClass: StripSecretsInterceptor },
+    // Maps database errors caused by bad input to 400/404/409 instead of 500.
+    { provide: APP_FILTER, useClass: PrismaExceptionFilter },
   ],
 })
 export class AppModule {}

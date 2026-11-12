@@ -17,6 +17,11 @@ import { RolesGuard } from '../../common/guards/roles.guard';
 import { Roles } from '../../common/decorators/roles.decorator';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { UserRole } from '@prisma/client';
+import {
+  CreateReservationDto,
+  VerifyQrDto,
+  RescheduleReservationDto,
+} from './dto/reservations.dto';
 
 @ApiTags('Reservations')
 @UseGuards(JwtAuthGuard, RolesGuard)
@@ -29,13 +34,7 @@ export class ReservationsController {
   @Roles(UserRole.CUSTOMER)
   create(
     @CurrentUser('id') userId: string,
-    @Body()
-    body: {
-      productId: string;
-      reservedPrice: number;
-      quantity?: number;
-      negotiationId?: string;
-    },
+    @Body() body: CreateReservationDto,
   ) {
     return this.reservationsService.createReservation(userId, body);
   }
@@ -62,10 +61,7 @@ export class ReservationsController {
 
   @Post('shopkeeper/reservations/verify-qr')
   @Roles(UserRole.SHOPKEEPER, UserRole.ADMIN)
-  verifyQr(
-    @CurrentUser('id') userId: string,
-    @Body() body: { qrToken: string },
-  ) {
+  verifyQr(@CurrentUser('id') userId: string, @Body() body: VerifyQrDto) {
     return this.reservationsService.verifyQr(userId, body.qrToken);
   }
 
@@ -103,7 +99,7 @@ export class ReservationsController {
   reschedule(
     @Param('id', ParseUUIDPipe) id: string,
     @CurrentUser('id') userId: string,
-    @Body() body: { newDateTime: string },
+    @Body() body: RescheduleReservationDto,
   ) {
     return this.reservationsService.rescheduleReservation(
       id,

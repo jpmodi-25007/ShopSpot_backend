@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  BadRequestException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
@@ -6,6 +10,12 @@ export class AddressesService {
   constructor(private prisma: PrismaService) {}
 
   async createAddress(userId: string, data: any) {
+    for (const field of ['line1', 'city', 'state', 'pincode']) {
+      const value = data?.[field];
+      if (typeof value !== 'string' || value.trim() === '') {
+        throw new BadRequestException(`${field} is required`);
+      }
+    }
     if (data.isDefault) {
       // Unset previous defaults
       await this.prisma.address.updateMany({

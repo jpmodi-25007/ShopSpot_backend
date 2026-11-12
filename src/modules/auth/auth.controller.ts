@@ -16,7 +16,9 @@ import {
   ApiOperation,
   ApiResponse,
 } from '@nestjs/swagger';
-import { ThrottlerGuard } from '@nestjs/throttler';
+import * as fs from 'fs';
+import * as path from 'path';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { AuthService } from './auth.service';
 import {
   RegisterEmailDto,
@@ -26,6 +28,7 @@ import {
   RefreshTokenDto,
   UpdateProfileDto,
   ForgotPasswordDto,
+  ResetPasswordDto,
   ChangePasswordDto,
 } from './dto/auth.dto';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
@@ -80,11 +83,27 @@ export class AuthController {
   // ─── FORGOT PASSWORD ──────────────────────────────────────────────────────
 
   @Public()
+  @Throttle({
+    short: { limit: 3, ttl: 1000 },
+    medium: { limit: 5, ttl: 60000 },
+  })
   @Post('auth/forgot-password')
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Request password reset' })
   forgotPassword(@Body() dto: ForgotPasswordDto) {
     return this.authService.forgotPassword(dto);
+  }
+
+  @Public()
+  @Throttle({
+    short: { limit: 3, ttl: 1000 },
+    medium: { limit: 10, ttl: 60000 },
+  })
+  @Post('auth/reset-password')
+  @HttpCode(HttpStatus.OK)
+  @ApiOperation({ summary: 'Reset password using the emailed 6-digit code' })
+  resetPassword(@Body() dto: ResetPasswordDto) {
+    return this.authService.resetPassword(dto);
   }
 
   // ─── TOKENS ───────────────────────────────────────────────────────────────
@@ -187,8 +206,6 @@ export class AuthController {
     // prevent path-traversal attacks on the settings file read below.
     const safeRole = role.toLowerCase().replace(/[^a-z0-9]/g, '');
     try {
-      const fs = require('fs');
-      const path = require('path');
       const settingsPath = path.resolve(process.cwd(), 'data', 'settings.json');
       if (fs.existsSync(settingsPath)) {
         const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf8'));

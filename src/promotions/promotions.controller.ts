@@ -6,8 +6,13 @@ import {
   Delete,
   Body,
   Param,
+  UseGuards,
 } from '@nestjs/common';
+import { UserRole } from '@prisma/client';
 import { PromotionsService } from './promotions.service';
+import { JwtAuthGuard } from '../common/guards/jwt-auth.guard';
+import { RolesGuard } from '../common/guards/roles.guard';
+import { Roles } from '../common/decorators/roles.decorator';
 
 @Controller('promotions')
 export class PromotionsController {
@@ -19,12 +24,16 @@ export class PromotionsController {
     return { success: true, data: banners };
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Get('all')
   async getAllPromotions() {
     const banners = await this.promotionsService.getAllPromotions();
     return { success: true, data: banners };
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Post()
   async createPromotion(@Body() data: any) {
     const banner = await this.promotionsService.createPromotion(data);
@@ -35,6 +44,8 @@ export class PromotionsController {
     };
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Put(':id')
   async updatePromotion(@Param('id') id: string, @Body() data: any) {
     const banner = await this.promotionsService.updatePromotion(id, data);
@@ -45,6 +56,8 @@ export class PromotionsController {
     };
   }
 
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
   @Delete(':id')
   async deletePromotion(@Param('id') id: string) {
     await this.promotionsService.deletePromotion(id);

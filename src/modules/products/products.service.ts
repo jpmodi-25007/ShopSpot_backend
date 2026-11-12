@@ -4,6 +4,7 @@ import {
   ForbiddenException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { scrubNestedShops } from '../../common/helpers/sanitize.helper';
 import { StockStatus } from '@prisma/client';
 import {
   CreateProductDto,
@@ -13,6 +14,9 @@ import {
   SearchProductsDto,
 } from './dto/product.dto';
 import { slugify } from '../../common/helpers/slugify.helper';
+
+/** Upper bound for list endpoints so one request cannot pull a whole table. */
+const MAX_PAGE_SIZE = 100;
 
 @Injectable()
 export class ProductsService {
@@ -96,7 +100,7 @@ export class ProductsService {
         include: { category: true, mediaAssets: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
-        take: +limit,
+        take: Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE),
       }),
       this.prisma.product.count({ where }),
     ]);
@@ -297,7 +301,7 @@ export class ProductsService {
       .sort((a, b) => Number(a.sellingPrice) - Number(b.sellingPrice));
 
     if (results.length > 0) results[0].isBestDeal = true;
-    return results;
+    return scrubNestedShops(results);
   }
 
   async searchProducts(query: SearchProductsDto) {
@@ -351,7 +355,7 @@ export class ProductsService {
         },
         orderBy,
         skip: (page - 1) * limit,
-        take: +limit,
+        take: Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE),
       }),
       this.prisma.product.count({ where }),
     ]);

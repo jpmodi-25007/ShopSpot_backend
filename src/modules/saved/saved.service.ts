@@ -4,6 +4,10 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import {
+  omitPrivateShopFields,
+  scrubNestedShops,
+} from '../../common/helpers/sanitize.helper';
 
 @Injectable()
 export class SavedService {
@@ -51,7 +55,16 @@ export class SavedService {
         product: {
           include: {
             mediaAssets: true,
-            shop: { select: { id: true, name: true, slug: true, city: true, rating: true, logoUrl: true } },
+            shop: {
+              select: {
+                id: true,
+                name: true,
+                slug: true,
+                city: true,
+                rating: true,
+                logoUrl: true,
+              },
+            },
           },
         },
       },
@@ -59,7 +72,10 @@ export class SavedService {
     });
     return saved.map((s: any) => ({
       ...s.product,
-      images: s.product.mediaAssets?.map((m: any) => m.url) || [],
+      images:
+        (s.product.mediaAssets as any[] | undefined)?.map(
+          (m: any) => m.secureUrl ?? m.url,
+        ) || [],
     }));
   }
 
@@ -72,10 +88,11 @@ export class SavedService {
     });
     if (existing) throw new ConflictException('Shop already saved');
 
-    return this.prisma.savedShop.create({
+    const created = await this.prisma.savedShop.create({
       data: { userId, shopId },
       include: { shop: true },
     });
+    return scrubNestedShops(created);
   }
 
   async removeSavedShop(userId: string, shopId: string) {
@@ -95,6 +112,6 @@ export class SavedService {
       include: { shop: true },
       orderBy: { createdAt: 'desc' },
     });
-    return saved.map((s: any) => s.shop);
+    return saved.map((s: any) => omitPrivateShopFields(s.shop));
   }
 }

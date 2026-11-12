@@ -4,6 +4,7 @@ import {
   Post,
   Put,
   Patch,
+  Delete,
   Body,
   UseGuards,
   Param,
@@ -78,6 +79,12 @@ export class InfluencerController {
     @Body() dto: SubmitBidDto,
   ) {
     return this.influencerService.submitBid(userId, campaignId, dto);
+  }
+
+  @Delete('bids/:id')
+  @ApiOperation({ summary: 'Withdraw a bid' })
+  withdrawBid(@CurrentUser('id') userId: string, @Param('id') bidId: string) {
+    return this.influencerService.withdrawBid(userId, bidId);
   }
 
   @Post('bids/:id/accept-counter')

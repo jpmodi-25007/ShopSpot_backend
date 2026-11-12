@@ -5,8 +5,12 @@ import {
   BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { scrubNestedShops } from '../../common/helpers/sanitize.helper';
 import { NegotiationStatus, NotificationType } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
+
+/** Upper bound for list endpoints so one request cannot pull a whole table. */
+const MAX_PAGE_SIZE = 100;
 
 @Injectable()
 export class NegotiationsService {
@@ -75,7 +79,7 @@ export class NegotiationsService {
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
-        take: +limit,
+        take: Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE),
       }),
       this.prisma.negotiation.count({ where: { customerId } }),
     ]);
@@ -94,7 +98,7 @@ export class NegotiationsService {
     if (!neg) throw new NotFoundException('Negotiation not found');
     if (neg.customerId !== userId)
       throw new ForbiddenException('Not your negotiation');
-    return neg;
+    return scrubNestedShops(neg);
   }
 
   async counterOffer(id: string, customerId: string, counterPrice: number) {
@@ -133,28 +137,45 @@ export class NegotiationsService {
     const neg = await this.prisma.negotiation.findUnique({ where: { id } });
     if (!neg) throw new NotFoundException();
     if (neg.customerId !== customerId) throw new ForbiddenException();
-    if (
-      neg.status !== NegotiationStatus.COUNTERED &&
-      neg.status !== NegotiationStatus.PENDING
-    )
+    // A customer may only accept a price the shop has countered with. Accepting
+    // their own PENDING offer would let them set the final price unilaterally.
+    if (neg.status !== NegotiationStatus.COUNTERED || neg.counterPrice == null)
       throw new BadRequestException('Cannot accept in current state');
-    return this.prisma.negotiation.update({
-      where: { id },
+    // Conditional update so a concurrent state change cannot be overwritten.
+    const result = await this.prisma.negotiation.updateMany({
+      where: { id, status: NegotiationStatus.COUNTERED },
       data: {
         status: NegotiationStatus.ACCEPTED,
         acceptedAt: new Date(),
-        finalPrice: neg.counterPrice ?? neg.offeredPrice,
+        finalPrice: neg.counterPrice,
       },
     });
+    if (result.count === 0)
+      throw new BadRequestException('Cannot accept in current state');
+    return this.prisma.negotiation.findUniqueOrThrow({ where: { id } });
   }
 
   async rejectDeal(id: string, customerId: string) {
     const neg = await this.prisma.negotiation.findUnique({ where: { id } });
     if (!neg || neg.customerId !== customerId) throw new ForbiddenException();
+    this.assertOpen(neg.status);
     return this.prisma.negotiation.update({
       where: { id },
       data: { status: NegotiationStatus.REJECTED },
     });
+  }
+
+  /** Negotiations in a terminal state can no longer be acted upon. */
+  private assertOpen(status: NegotiationStatus) {
+    if (
+      status === NegotiationStatus.ACCEPTED ||
+      status === NegotiationStatus.REJECTED ||
+      status === NegotiationStatus.EXPIRED
+    ) {
+      throw new BadRequestException(
+        `Negotiation is already ${status.toLowerCase()}`,
+      );
+    }
   }
 
   // Shopkeeper side
@@ -180,7 +201,7 @@ export class NegotiationsService {
         },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
-        take: +limit,
+        take: Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE),
       }),
       this.prisma.negotiation.count({ where }),
     ]);
@@ -198,6 +219,7 @@ export class NegotiationsService {
       where: { id: negId },
     });
     if (!neg || neg.shopId !== shop?.id) throw new ForbiddenException();
+    this.assertOpen(neg.status);
     if (neg.counterRound >= 3)
       throw new BadRequestException('Maximum counter rounds reached');
 
@@ -230,6 +252,7 @@ export class NegotiationsService {
       where: { id: negId },
     });
     if (!neg || neg.shopId !== shop?.id) throw new ForbiddenException();
+    this.assertOpen(neg.status);
     return this.prisma.negotiation.update({
       where: { id: negId },
       data: {
@@ -246,6 +269,7 @@ export class NegotiationsService {
       where: { id: negId },
     });
     if (!neg || neg.shopId !== shop?.id) throw new ForbiddenException();
+    this.assertOpen(neg.status);
     return this.prisma.negotiation.update({
       where: { id: negId },
       data: { status: NegotiationStatus.REJECTED },

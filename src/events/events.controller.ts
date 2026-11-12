@@ -23,11 +23,7 @@ export class EventsController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.SHOPKEEPER)
   async create(@Req() req: any, @Body() createEventDto: any) {
-    const data = await this.eventsService.create(req.user.id, {
-      ...createEventDto,
-      startDate: new Date(createEventDto.startDate),
-      endDate: new Date(createEventDto.endDate),
-    });
+    const data = await this.eventsService.create(req.user, createEventDto);
     return {
       status: 'success',
       data,
@@ -66,12 +62,12 @@ export class EventsController {
   @Patch(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.SHOPKEEPER)
-  async update(@Param('id') id: string, @Body() updateEventDto: any) {
-    const payload = { ...updateEventDto };
-    if (payload.startDate) payload.startDate = new Date(payload.startDate);
-    if (payload.endDate) payload.endDate = new Date(payload.endDate);
-
-    const data = await this.eventsService.update(id, payload);
+  async update(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() updateEventDto: any,
+  ) {
+    const data = await this.eventsService.update(id, req.user, updateEventDto);
     return {
       status: 'success',
       data,
@@ -81,8 +77,8 @@ export class EventsController {
   @Delete(':id')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles(UserRole.ADMIN, UserRole.SHOPKEEPER)
-  async remove(@Param('id') id: string) {
-    await this.eventsService.remove(id);
+  async remove(@Req() req: any, @Param('id') id: string) {
+    await this.eventsService.remove(id, req.user);
     return {
       status: 'success',
       message: 'Event deleted successfully',

@@ -6,9 +6,21 @@ import {
   IsMobilePhone,
   MaxLength,
   IsEnum,
+  IsIn,
+  Matches,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { UserRole } from '@prisma/client';
+
+/**
+ * Roles that may be self-assigned at sign-up. ADMIN accounts can never be
+ * created through the public registration endpoints.
+ */
+export const SELF_REGISTERABLE_ROLES: UserRole[] = [
+  UserRole.CUSTOMER,
+  UserRole.SHOPKEEPER,
+  UserRole.INFLUENCER,
+];
 
 export class RegisterEmailDto {
   @ApiProperty({ example: 'user@example.com' })
@@ -27,8 +39,10 @@ export class RegisterEmailDto {
   @MaxLength(100)
   name?: string;
 
-  @ApiProperty({ example: 'CUSTOMER', enum: UserRole })
-  @IsEnum(UserRole)
+  @ApiProperty({ example: 'CUSTOMER', enum: SELF_REGISTERABLE_ROLES })
+  @IsIn(SELF_REGISTERABLE_ROLES, {
+    message: 'role must be one of: CUSTOMER, SHOPKEEPER, INFLUENCER',
+  })
   role: UserRole;
 }
 
@@ -53,8 +67,10 @@ export class RegisterMobileDto {
   @MaxLength(100)
   name?: string;
 
-  @ApiProperty({ example: 'CUSTOMER', enum: UserRole })
-  @IsEnum(UserRole)
+  @ApiProperty({ example: 'CUSTOMER', enum: SELF_REGISTERABLE_ROLES })
+  @IsIn(SELF_REGISTERABLE_ROLES, {
+    message: 'role must be one of: CUSTOMER, SHOPKEEPER, INFLUENCER',
+  })
   role: UserRole;
 }
 
@@ -122,5 +138,22 @@ export class ChangePasswordDto {
   @ApiProperty({ example: 'NewSecurePass@123' })
   @IsString()
   @MinLength(8)
+  newPassword: string;
+}
+
+export class ResetPasswordDto {
+  @ApiProperty({ example: 'user@example.com' })
+  @IsString()
+  emailOrPhone: string;
+
+  @ApiProperty({ example: '123456' })
+  @IsString()
+  @Matches(/^\d{6}$/, { message: 'code must be a 6-digit number' })
+  code: string;
+
+  @ApiProperty({ example: 'NewSecurePass@123', minLength: 8 })
+  @IsString()
+  @MinLength(8, { message: 'Password must be at least 8 characters' })
+  @MaxLength(72, { message: 'Password must be at most 72 characters' })
   newPassword: string;
 }

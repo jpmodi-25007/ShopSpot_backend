@@ -4,7 +4,7 @@ services:
     env: node
     plan: free
     region: ohio # Adjust region as needed
-    buildCommand: npm install --include=dev && npx prisma generate && npx prisma db push --accept-data-loss && npx ts-node create-admin.ts && npm run build
+    buildCommand: npm install --include=dev && npx prisma generate && npx prisma db push && npx ts-node create-admin.ts && npm run build
     startCommand: npm run start:prod
     envVars:
       - key: DATABASE_URL
@@ -15,7 +15,10 @@ services:
         value: 3001
       - key: NODE_ENV
         value: production
-      # REMINDER: Manually add JWT secrets, SMTP config, and other keys in Render Dashboard
+      # REMINDER: Manually add JWT secrets, SMTP config, and other keys in Render Dashboard.
+      # Also set ADMIN_PASSWORD (and optionally ADMIN_EMAIL) in the Render Dashboard so
+      # create-admin.ts can bootstrap the first admin. An existing admin's password is
+      # only overwritten when ADMIN_RESET_PASSWORD=true.
     
 databases:
   - name: findivo-db

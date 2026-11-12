@@ -7,11 +7,29 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 import { CreateReviewDto } from './dto/review.dto';
 
+/** Upper bound for list endpoints so one request cannot pull a whole table. */
+const MAX_PAGE_SIZE = 100;
+
 @Injectable()
 export class ReviewsService {
   constructor(private readonly prisma: PrismaService) {}
 
   async createReview(customerId: string, dto: CreateReviewDto) {
+    if (dto.shopId) {
+      const shop = await this.prisma.shop.findUnique({
+        where: { id: dto.shopId },
+        select: { id: true },
+      });
+      if (!shop) throw new NotFoundException('Shop not found');
+    }
+    if (dto.productId) {
+      const product = await this.prisma.product.findUnique({
+        where: { id: dto.productId },
+        select: { id: true },
+      });
+      if (!product) throw new NotFoundException('Product not found');
+    }
+
     return this.prisma.$transaction(async (tx) => {
       // 1. Guard: one review per customer per shop
       if (dto.shopId) {
@@ -42,9 +60,12 @@ export class ReviewsService {
       }
 
       // 2. Create the review
+      // `mediaUrls` is the API name for the Review.images column.
+      const { mediaUrls, ...reviewFields } = dto;
       const review = await tx.review.create({
         data: {
-          ...dto,
+          ...reviewFields,
+          images: mediaUrls ?? [],
           customerId,
           isPublic: true,
         },
@@ -75,7 +96,7 @@ export class ReviewsService {
       this.prisma.review.findMany({
         where: { customerId },
         skip: (page - 1) * limit,
-        take: +limit,
+        take: Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE),
       }),
       this.prisma.review.count({ where: { customerId } }),
     ]);

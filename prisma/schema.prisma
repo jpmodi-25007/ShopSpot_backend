@@ -26,6 +26,7 @@ model User {
   lastLoginAt          DateTime?
   resetCode            String?
   resetCodeExpiresAt   DateTime?
+  resetAttempts        Int                @default(0)
   createdAt            DateTime           @default(now())
   updatedAt            DateTime           @updatedAt
   addresses            Address[]
@@ -60,6 +61,7 @@ model RefreshToken {
   createdAt DateTime  @default(now())
   user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("refresh_tokens")
 }
 
@@ -72,6 +74,7 @@ model UserDevice {
   updatedAt DateTime @updatedAt
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId])
   @@map("user_devices")
 }
 
@@ -141,6 +144,8 @@ model Shop {
   subscriptions         Subscription[]
   suppliers             Supplier[]
 
+  @@index([categoryId])
+  @@index([status])
   @@map("shops")
 }
 
@@ -185,6 +190,9 @@ model Product {
   savedByUsers      SavedProduct[]
   stockHistory      StockHistory[]
 
+  @@index([shopId])
+  @@index([categoryId])
+  @@index([isActive])
   @@map("products")
 }
 
@@ -250,6 +258,9 @@ model Negotiation {
   shop              Shop              @relation("ShopNegotiations", fields: [shopId], references: [id])
   reservations      Reservation[]
 
+  @@index([customerId])
+  @@index([shopId])
+  @@index([productId])
   @@map("negotiations")
 }
 
@@ -266,14 +277,15 @@ model Message {
   negotiation   Negotiation @relation(fields: [negotiationId], references: [id], onDelete: Cascade)
   sender        User        @relation(fields: [senderId], references: [id])
 
+  @@index([negotiationId])
   @@map("messages")
 }
 
 model ChatRoom {
   id           String        @id @default(uuid())
-  participantA String        
-  participantB String        
-  contextType  String?       // "CAMPAIGN", "SUPPORT", etc
+  participantA String
+  participantB String
+  contextType  String? // "CAMPAIGN", "SUPPORT", etc
   contextId    String?
   createdAt    DateTime      @default(now())
   updatedAt    DateTime      @updatedAt
@@ -281,19 +293,22 @@ model ChatRoom {
   userA        User          @relation("ParticipantA", fields: [participantA], references: [id])
   userB        User          @relation("ParticipantB", fields: [participantB], references: [id])
 
+  @@index([participantA])
+  @@index([participantB])
   @@map("chat_rooms")
 }
 
 model ChatMessage {
-  id         String   @id @default(uuid())
-  roomId     String
-  senderId   String
-  content    String
-  isRead     Boolean  @default(false)
-  createdAt  DateTime @default(now())
-  room       ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
-  sender     User     @relation(fields: [senderId], references: [id])
+  id        String   @id @default(uuid())
+  roomId    String
+  senderId  String
+  content   String
+  isRead    Boolean  @default(false)
+  createdAt DateTime @default(now())
+  room      ChatRoom @relation(fields: [roomId], references: [id], onDelete: Cascade)
+  sender    User     @relation(fields: [senderId], references: [id])
 
+  @@index([roomId])
   @@map("chat_messages")
 }
 
@@ -315,6 +330,10 @@ model Reservation {
   product       Product           @relation(fields: [productId], references: [id])
   shop          Shop              @relation("ShopReservations", fields: [shopId], references: [id])
 
+  @@index([customerId])
+  @@index([shopId])
+  @@index([productId])
+  @@index([status, expiresAt])
   @@map("reservations")
 }
 
@@ -342,6 +361,8 @@ model Order {
   shop            Shop          @relation("ShopOrders", fields: [shopId], references: [id])
   reviews         Review[]
 
+  @@index([customerId])
+  @@index([shopId])
   @@map("orders")
 }
 
@@ -366,6 +387,9 @@ model Review {
   product            Product? @relation(fields: [productId], references: [id])
   shop               Shop?    @relation(fields: [shopId], references: [id])
 
+  @@index([shopId])
+  @@index([productId])
+  @@index([customerId])
   @@map("reviews")
 }
 
@@ -443,6 +467,7 @@ model AnalyticsEvent {
   shop      Shop?    @relation(fields: [shopId], references: [id])
   user      User?    @relation(fields: [userId], references: [id])
 
+  @@index([eventType, createdAt])
   @@map("analytics_events")
 }
 
@@ -457,6 +482,7 @@ model Notification {
   createdAt DateTime         @default(now())
   user      User             @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  @@index([userId, isRead])
   @@map("notifications")
 }
 
@@ -534,6 +560,8 @@ model InfluencerCampaign {
   product             Product?             @relation(fields: [productId], references: [id])
   shop                Shop                 @relation(fields: [shopId], references: [id])
 
+  @@index([shopId])
+  @@index([status])
   @@map("influencer_campaigns")
 }
 
@@ -557,6 +585,8 @@ model InfluencerBid {
   campaign              InfluencerCampaign     @relation(fields: [campaignId], references: [id])
   influencer            InfluencerProfile      @relation(fields: [influencerId], references: [id])
 
+  @@index([campaignId])
+  @@index([influencerId])
   @@map("influencer_bids")
 }
 
@@ -697,6 +727,7 @@ model StockHistory {
   createdAt DateTime @default(now())
   product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
 
+  @@index([productId])
   @@map("stock_history")
 }
 
@@ -767,6 +798,8 @@ model Event {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   shop        Shop?    @relation(fields: [shopId], references: [id], onDelete: Cascade)
+
+  @@index([shopId])
 }
 
 enum UserRole {

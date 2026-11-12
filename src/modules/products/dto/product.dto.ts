@@ -10,7 +10,7 @@ import {
   ArrayMaxSize,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
-import { Type } from 'class-transformer';
+import { Transform, Type } from 'class-transformer';
 
 export class MediaAssetDto {
   @ApiProperty() @IsString() publicId: string;
@@ -126,6 +126,13 @@ export class SearchProductsDto {
   @ApiPropertyOptional()
   @IsOptional()
   @IsBoolean()
-  @Type(() => Boolean)
+  // Query strings arrive as text: Boolean('false') is true, so parse explicitly
+  // from the raw value instead of relying on implicit conversion.
+  @Transform(({ obj }) => {
+    const raw = obj?.inStock;
+    if (raw === undefined || raw === null || raw === '') return undefined;
+    if (typeof raw === 'boolean') return raw;
+    return ['true', '1', 'yes'].includes(String(raw).toLowerCase());
+  })
   inStock?: boolean;
 }

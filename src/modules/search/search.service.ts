@@ -1,6 +1,7 @@
 import { Injectable } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { GlobalSearchDto } from './dto/search.dto';
+import { ShopStatus } from '@prisma/client';
 
 @Injectable()
 export class SearchService {
@@ -14,7 +15,10 @@ export class SearchService {
 
     const [shops, products, categories] = await Promise.all([
       this.prisma.shop.findMany({
-        where: { name: { contains: q, mode: 'insensitive' } },
+        where: {
+          name: { contains: q, mode: 'insensitive' },
+          status: ShopStatus.ACTIVE,
+        },
         take: 5,
         select: {
           id: true,
@@ -28,7 +32,10 @@ export class SearchService {
         },
       }),
       this.prisma.product.findMany({
-        where: { name: { contains: q, mode: 'insensitive' } },
+        where: {
+          name: { contains: q, mode: 'insensitive' },
+          isActive: true,
+        },
         take: 10,
         select: {
           id: true,

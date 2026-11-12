@@ -1,3 +1,4 @@
+import { CurrentUser } from '../../../common/decorators/current-user.decorator';
 import {
   Controller,
   Get,
@@ -17,6 +18,7 @@ import {
   ResolveReportDto,
   CreateShopDto,
   CreateProductDto,
+  CreateUserDto,
 } from '../dto/admin.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
@@ -75,7 +77,7 @@ export class AdminController {
 
   @Post('users')
   @ApiOperation({ summary: 'Create a new user from admin panel' })
-  createUser(@Body() dto: any) {
+  createUser(@Body() dto: CreateUserDto) {
     return this.adminService.createUser(dto);
   }
 
@@ -99,8 +101,12 @@ export class AdminController {
 
   @Post('users/:id/suspend')
   @ApiOperation({ summary: 'Suspend or activate a user' })
-  suspendUser(@Param('id') userId: string, @Body() dto: SuspendUserDto) {
-    return this.adminService.suspendUser(userId, dto);
+  suspendUser(
+    @Param('id') userId: string,
+    @Body() dto: SuspendUserDto,
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.adminService.suspendUser(userId, dto, actorId);
   }
 
   @Post('shops/:id/verify')

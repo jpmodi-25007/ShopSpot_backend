@@ -12,6 +12,10 @@ import { NotificationsService } from './notifications.service';
 import { JwtAuthGuard } from '../../common/guards/jwt-auth.guard';
 import { CurrentUser } from '../../common/decorators/current-user.decorator';
 import { RegisterDeviceDto } from './dto/device.dto';
+import { BroadcastNotificationDto } from './dto/broadcast.dto';
+import { RolesGuard } from '../../common/guards/roles.guard';
+import { Roles } from '../../common/decorators/roles.decorator';
+import { UserRole } from '@prisma/client';
 
 @ApiTags('Notifications')
 @UseGuards(JwtAuthGuard)
@@ -42,6 +46,17 @@ export class NotificationsController {
   @Post(':id/read')
   read(@Param('id') id: string, @CurrentUser('id') userId: string) {
     return this.notificationsService.markAsRead(id, userId);
+  }
+
+  @Post('broadcast')
+  @UseGuards(RolesGuard)
+  @Roles(UserRole.ADMIN)
+  broadcast(@Body() dto: BroadcastNotificationDto) {
+    return this.notificationsService.broadcast(
+      dto.title,
+      dto.body,
+      dto.targetRole ?? 'ALL',
+    );
   }
 
   @Post('devices')

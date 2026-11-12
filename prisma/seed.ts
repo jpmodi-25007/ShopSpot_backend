@@ -4,6 +4,11 @@ import * as argon2 from 'argon2';
 const prisma = new PrismaClient();
 
 async function main() {
+  if (process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'Refusing to run the development seed (shared known passwords) in production.',
+    );
+  }
   console.log('Seeding database...');
 
   const passwordHash = await argon2.hash('Password123!');
@@ -23,16 +28,56 @@ async function main() {
 
   // 2. Create Categories
   const categoriesToCreate = [
-    { name: 'Electronics', slug: 'electronics', iconUrl: 'https://cdn-icons-png.flaticon.com/512/1261/1261184.png' },
-    { name: 'Fashion', slug: 'fashion', iconUrl: 'https://cdn-icons-png.flaticon.com/512/3159/3159614.png' },
-    { name: 'Food & Beverage', slug: 'food-beverage', iconUrl: 'https://cdn-icons-png.flaticon.com/512/1046/1046771.png' },
-    { name: 'Home & Garden', slug: 'home-garden', iconUrl: 'https://cdn-icons-png.flaticon.com/512/619/619056.png' },
-    { name: 'Beauty & Health', slug: 'beauty-health', iconUrl: 'https://cdn-icons-png.flaticon.com/512/2916/2916298.png' },
-    { name: 'Sports & Outdoors', slug: 'sports-outdoors', iconUrl: 'https://cdn-icons-png.flaticon.com/512/857/857418.png' },
-    { name: 'Automotive', slug: 'automotive', iconUrl: 'https://cdn-icons-png.flaticon.com/512/3085/3085330.png' },
-    { name: 'Books & Stationery', slug: 'books-stationery', iconUrl: 'https://cdn-icons-png.flaticon.com/512/3145/3145765.png' },
-    { name: 'Toys & Games', slug: 'toys-games', iconUrl: 'https://cdn-icons-png.flaticon.com/512/2699/2699042.png' },
-    { name: 'Services', slug: 'services', iconUrl: 'https://cdn-icons-png.flaticon.com/512/2910/2910791.png' },
+    {
+      name: 'Electronics',
+      slug: 'electronics',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/1261/1261184.png',
+    },
+    {
+      name: 'Fashion',
+      slug: 'fashion',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/3159/3159614.png',
+    },
+    {
+      name: 'Food & Beverage',
+      slug: 'food-beverage',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/1046/1046771.png',
+    },
+    {
+      name: 'Home & Garden',
+      slug: 'home-garden',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/619/619056.png',
+    },
+    {
+      name: 'Beauty & Health',
+      slug: 'beauty-health',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/2916/2916298.png',
+    },
+    {
+      name: 'Sports & Outdoors',
+      slug: 'sports-outdoors',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/857/857418.png',
+    },
+    {
+      name: 'Automotive',
+      slug: 'automotive',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/3085/3085330.png',
+    },
+    {
+      name: 'Books & Stationery',
+      slug: 'books-stationery',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/3145/3145765.png',
+    },
+    {
+      name: 'Toys & Games',
+      slug: 'toys-games',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/2699/2699042.png',
+    },
+    {
+      name: 'Services',
+      slug: 'services',
+      iconUrl: 'https://cdn-icons-png.flaticon.com/512/2910/2910791.png',
+    },
   ];
 
   let category1: any;
@@ -79,7 +124,9 @@ async function main() {
   console.log(`✅ Shopkeeper & Shop created`);
 
   // 4. Create Product for the Shop
-  const shop = await prisma.shop.findUnique({ where: { ownerId: shopkeeper.id } });
+  const shop = await prisma.shop.findUnique({
+    where: { ownerId: shopkeeper.id },
+  });
   if (shop) {
     await prisma.product.create({
       data: {

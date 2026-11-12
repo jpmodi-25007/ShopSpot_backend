@@ -2,11 +2,15 @@ import {
   Injectable,
   NotFoundException,
   ForbiddenException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { CreateOrderDto, UpdateOrderStatusDto } from './dto/orders.dto';
 import { OrderStatus, PaymentStatus, DeliveryType } from '@prisma/client';
 import { randomUUID } from 'crypto';
+
+/** Upper bound for a single line item, guards against absurd quantities. */
+const MAX_ITEM_QUANTITY = 1000;
 
 @Injectable()
 export class OrdersService {
@@ -15,19 +19,92 @@ export class OrdersService {
   async createOrder(customerId: string, dto: CreateOrderDto) {
     const orderNumber = `ORD-${Date.now()}-${Math.floor(Math.random() * 1000)}`;
 
-    // Wrap order creation + stock updates in a single transaction to prevent
-    // race conditions that would allow stock to go negative under concurrent orders.
+    if (!Array.isArray(dto.items) || dto.items.length === 0) {
+      throw new BadRequestException('Order must contain at least one item');
+    }
+
+    // Wrap order creation + stock updates in a single transaction so a failed
+    // stock check rolls back the whole order.
     const order = await this.prisma.$transaction(async (tx) => {
-      const newOrder = await tx.order.create({
+      const shop = await tx.shop.findUnique({
+        where: { id: dto.shopId },
+        select: { id: true },
+      });
+      if (!shop) throw new NotFoundException('Shop not found');
+
+      // Prices and quantities are never trusted from the client: every line is
+      // re-priced from the database and totals are recomputed server-side.
+      const pricedItems: any[] = [];
+      let subtotal = 0;
+
+      for (const item of dto.items) {
+        const quantity = Number(item?.quantity);
+        if (
+          !item?.productId ||
+          !Number.isInteger(quantity) ||
+          quantity < 1 ||
+          quantity > MAX_ITEM_QUANTITY
+        ) {
+          throw new BadRequestException(
+            'Each item needs a valid productId and a positive integer quantity',
+          );
+        }
+
+        const product = await tx.product.findFirst({
+          where: { id: item.productId, shopId: dto.shopId, isActive: true },
+          select: { id: true, name: true, sellingPrice: true },
+        });
+        if (!product) {
+          throw new BadRequestException(
+            `Product ${item.productId} is not available in this shop`,
+          );
+        }
+
+        // Atomic conditional decrement: stock can never go negative, even
+        // under concurrent orders.
+        const decremented = await tx.product.updateMany({
+          where: { id: product.id, stockQuantity: { gte: quantity } },
+          data: { stockQuantity: { decrement: quantity } },
+        });
+        if (decremented.count === 0) {
+          throw new BadRequestException(
+            `Insufficient stock for ${product.name}`,
+          );
+        }
+
+        const unitPrice = Number(product.sellingPrice);
+        subtotal += unitPrice * quantity;
+        pricedItems.push({ ...item, quantity, price: unitPrice });
+
+        await tx.stockHistory.create({
+          data: {
+            productId: product.id,
+            quantity: -quantity,
+            reason: 'SALE',
+            note: `Order ${orderNumber}`,
+          },
+        });
+      }
+
+      subtotal = Math.round(subtotal * 100) / 100;
+      const deliveryCharge = Math.max(0, Number(dto.deliveryCharge) || 0);
+      const discount = Math.min(
+        subtotal,
+        Math.max(0, Number(dto.discount) || 0),
+      );
+      const total =
+        Math.round((subtotal + deliveryCharge - discount) * 100) / 100;
+
+      return tx.order.create({
         data: {
           orderNumber,
           customerId,
           shopId: dto.shopId,
-          items: dto.items,
-          subtotal: dto.subtotal,
-          deliveryCharge: dto.deliveryCharge || 0,
-          discount: dto.discount || 0,
-          total: dto.total,
+          items: pricedItems,
+          subtotal,
+          deliveryCharge,
+          discount,
+          total,
           deliveryAddress: dto.deliveryAddress,
           deliveryType: dto.deliveryType || DeliveryType.STANDARD,
           status: OrderStatus.PENDING,
@@ -35,32 +112,6 @@ export class OrdersService {
           idempotencyKey: randomUUID(),
         },
       });
-
-      for (const item of dto.items) {
-        if (item.productId && item.quantity) {
-          // Fetch current stock to guard against going negative
-          const product = await tx.product.findUnique({
-            where: { id: item.productId },
-            select: { stockQuantity: true },
-          });
-          if (!product) continue;
-          const newQty = Math.max(0, product.stockQuantity - item.quantity);
-          await tx.product.update({
-            where: { id: item.productId },
-            data: { stockQuantity: newQty },
-          });
-          await tx.stockHistory.create({
-            data: {
-              productId: item.productId,
-              quantity: -item.quantity,
-              reason: 'SALE',
-              note: `Order ${orderNumber}`,
-            },
-          });
-        }
-      }
-
-      return newOrder;
     });
 
     return order;
@@ -103,24 +154,40 @@ export class OrdersService {
     if (order.shop.ownerId !== shopkeeperId)
       throw new ForbiddenException('Not your order');
 
-    const updated = await this.prisma.order.update({
-      where: { id: orderId },
-      data: { status: dto.status },
-    });
-
     if (
-      dto.status === OrderStatus.CANCELLED &&
-      order.status !== OrderStatus.CANCELLED
+      order.status === OrderStatus.CANCELLED ||
+      order.status === OrderStatus.DELIVERED
     ) {
-      const items = order.items as any[];
-      if (items && Array.isArray(items)) {
+      if (order.status === dto.status) return order;
+      throw new BadRequestException(
+        `Order is already ${order.status} and can no longer be changed`,
+      );
+    }
+
+    const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+    const cancelling = dto.status === OrderStatus.CANCELLED;
+
+    // Status change + stock restore happen atomically so a cancel can never
+    // restore stock twice or leave the order in a half-updated state.
+    const updated = await this.prisma.$transaction(async (tx) => {
+      const result = await tx.order.updateMany({
+        where: { id: orderId, status: order.status },
+        data: { status: dto.status },
+      });
+      if (result.count === 0) {
+        throw new BadRequestException(
+          'Order was modified concurrently, please retry',
+        );
+      }
+
+      if (cancelling) {
         for (const item of items) {
           if (item.productId && item.quantity) {
-            await this.prisma.product.update({
+            await tx.product.update({
               where: { id: item.productId },
               data: { stockQuantity: { increment: item.quantity } },
             });
-            await this.prisma.stockHistory.create({
+            await tx.stockHistory.create({
               data: {
                 productId: item.productId,
                 quantity: item.quantity,
@@ -131,7 +198,9 @@ export class OrdersService {
           }
         }
       }
-    }
+
+      return tx.order.findUniqueOrThrow({ where: { id: orderId } });
+    });
 
     return updated;
   }

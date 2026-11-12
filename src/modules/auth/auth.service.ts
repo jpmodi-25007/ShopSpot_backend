@@ -12,7 +12,7 @@ import { Cron, CronExpression } from '@nestjs/schedule';
 import { PrismaService } from '../../prisma/prisma.service';
 import { User } from '@prisma/client';
 import * as argon2 from 'argon2';
-import { randomUUID } from 'crypto';
+import { createHash, createHmac, randomInt, randomUUID } from 'crypto';
 import * as nodemailer from 'nodemailer';
 import {
   RegisterEmailDto,
@@ -21,8 +21,12 @@ import {
   LoginMobileDto,
   UpdateProfileDto,
   ForgotPasswordDto,
+  ResetPasswordDto,
   ChangePasswordDto,
 } from './dto/auth.dto';
+
+const MAX_RESET_ATTEMPTS = 5;
+const REFRESH_REUSE_GRACE_MS = 10_000;
 
 export interface AuthTokens {
   accessToken: string;
@@ -184,50 +188,70 @@ export class AuthService {
 
   // ─── FORGOT PASSWORD ──────────────────────────────────────────────────────
 
+  private mailTransporter: nodemailer.Transporter | null = null;
+
+  private getMailTransporter(): nodemailer.Transporter {
+    if (!this.mailTransporter) {
+      this.mailTransporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST || 'smtp.gmail.com',
+        port: parseInt(process.env.SMTP_PORT || '465', 10),
+        secure: true, // true for 465, false for other ports
+        auth: {
+          user: process.env.SMTP_EMAIL,
+          pass: process.env.SMTP_PASSWORD,
+        },
+      });
+    }
+    return this.mailTransporter;
+  }
+
+  /** Reset codes are stored as an HMAC so a DB leak does not expose them. */
+  private hashResetCode(code: string): string {
+    const secret =
+      this.config.get<string>('JWT_REFRESH_SECRET') ||
+      this.config.get<string>('JWT_ACCESS_SECRET') ||
+      'reset-code';
+    return createHmac('sha256', secret).update(code).digest('hex');
+  }
+
+  /** Refresh tokens are stored as a SHA-256 digest, never in plaintext. */
+  private hashToken(token: string): string {
+    return createHash('sha256').update(token).digest('hex');
+  }
+
+  private async findUserByIdentifier(emailOrPhone: string) {
+    if (emailOrPhone.includes('@')) {
+      return this.prisma.user.findUnique({
+        where: { email: emailOrPhone.toLowerCase().trim() },
+      });
+    }
+    return this.prisma.user.findUnique({
+      where: { mobile: this.normalizeMobile(emailOrPhone) },
+    });
+  }
+
   async forgotPassword(dto: ForgotPasswordDto): Promise<{ message: string }> {
     const isEmail = dto.emailOrPhone.includes('@');
-    let user;
-
-    if (isEmail) {
-      user = await this.prisma.user.findUnique({
-        where: { email: dto.emailOrPhone.toLowerCase().trim() },
-      });
-    } else {
-      const mobile = this.normalizeMobile(dto.emailOrPhone);
-      user = await this.prisma.user.findUnique({ where: { mobile } });
-    }
+    const user = await this.findUserByIdentifier(dto.emailOrPhone);
 
     // We do not throw an error if the user is not found to prevent user enumeration
     if (user && isEmail) {
       try {
-        // TODO: Move transporter to a singleton NestJS provider (e.g. MailService)
-        // to avoid re-creating the SMTP connection on every call.
-        const transporter = nodemailer.createTransport({
-          host: process.env.SMTP_HOST || 'smtp.gmail.com',
-          port: parseInt(process.env.SMTP_PORT || '465', 10),
-          secure: true, // true for 465, false for other ports
-          auth: {
-            user: process.env.SMTP_EMAIL,
-            pass: process.env.SMTP_PASSWORD,
-          },
-        });
-
-        // Generate a secure 6-digit reset code
-        const resetCode = Math.floor(
-          100000 + Math.random() * 900000,
-        ).toString();
+        // Cryptographically secure 6-digit reset code
+        const resetCode = randomInt(100000, 1000000).toString();
         const resetCodeExpiresAt = new Date(Date.now() + 15 * 60 * 1000); // 15 minutes
 
-        // Persist the code so it can be validated on the reset endpoint.
+        // Persist a hash of the code so it can be validated on the reset endpoint.
         await this.prisma.user.update({
           where: { id: user.id },
           data: {
-            resetCode,
+            resetCode: this.hashResetCode(resetCode),
             resetCodeExpiresAt,
+            resetAttempts: 0,
           },
         });
 
-        await transporter.sendMail({
+        await this.getMailTransporter().sendMail({
           from: `"Findivo Support" <${process.env.SMTP_EMAIL}>`,
           to: dto.emailOrPhone,
           subject: 'Password Reset Request',
@@ -237,7 +261,7 @@ export class AuthService {
 
         this.logger.log(`Reset email sent to ${dto.emailOrPhone}`);
       } catch (error) {
-        console.error('Error sending reset email:', error);
+        this.logger.error('Error sending reset email', error as Error);
       }
     } else if (user && !isEmail) {
       // SMS integration: use Twilio/MSG91 here with resetCode
@@ -245,6 +269,48 @@ export class AuthService {
     }
 
     return { message: 'Instructions sent successfully!' };
+  }
+
+  async resetPassword(dto: ResetPasswordDto): Promise<{ message: string }> {
+    const invalid = new BadRequestException('Invalid or expired reset code');
+    const user = await this.findUserByIdentifier(dto.emailOrPhone);
+    if (
+      !user ||
+      !user.resetCode ||
+      !user.resetCodeExpiresAt ||
+      user.resetCodeExpiresAt < new Date() ||
+      user.resetAttempts >= MAX_RESET_ATTEMPTS
+    ) {
+      throw invalid;
+    }
+
+    if (user.resetCode !== this.hashResetCode(dto.code)) {
+      await this.prisma.user.update({
+        where: { id: user.id },
+        data: { resetAttempts: { increment: 1 } },
+      });
+      throw invalid;
+    }
+
+    const hashed = await argon2.hash(dto.newPassword);
+    await this.prisma.$transaction([
+      this.prisma.user.update({
+        where: { id: user.id },
+        data: {
+          password: hashed,
+          resetCode: null,
+          resetCodeExpiresAt: null,
+          resetAttempts: 0,
+        },
+      }),
+      // Sign out every existing session after a password reset.
+      this.prisma.refreshToken.updateMany({
+        where: { userId: user.id, revokedAt: null },
+        data: { revokedAt: new Date() },
+      }),
+    ]);
+
+    return { message: 'Password reset successfully' };
   }
 
   // ─── TOKENS ─────────────────────────────────────────────────────────────────
@@ -259,14 +325,20 @@ export class AuthService {
       throw new UnauthorizedException('Invalid or expired refresh token');
     }
 
-    const stored = await this.prisma.refreshToken.findUnique({
-      where: { token: rawToken },
+    // Tokens are stored hashed; fall back to the raw value so sessions issued
+    // before hashing was introduced keep working until they expire.
+    const stored = await this.prisma.refreshToken.findFirst({
+      where: { token: { in: [this.hashToken(rawToken), rawToken] } },
       include: { user: true },
     });
 
     if (!stored || stored.revokedAt || stored.expiresAt < new Date()) {
-      // Detect potential reuse attack → revoke all tokens
-      if (stored) {
+      // Detect potential reuse attack → revoke all tokens. A token revoked
+      // only moments ago is treated as a benign concurrent retry.
+      const justRotated =
+        stored?.revokedAt &&
+        Date.now() - stored.revokedAt.getTime() < REFRESH_REUSE_GRACE_MS;
+      if (stored && !justRotated) {
         await this.prisma.refreshToken.updateMany({
           where: { userId: payload.sub },
           data: { revokedAt: new Date() },
@@ -275,18 +347,24 @@ export class AuthService {
       throw new UnauthorizedException('Refresh token has been revoked');
     }
 
-    // Rotate: revoke old, issue new pair
-    await this.prisma.refreshToken.update({
-      where: { id: stored.id },
+    // Rotate atomically: only one concurrent request can revoke the old token.
+    const rotated = await this.prisma.refreshToken.updateMany({
+      where: { id: stored.id, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    if (rotated.count === 0) {
+      throw new UnauthorizedException('Refresh token has been revoked');
+    }
 
     return this.generateTokens(stored.user);
   }
 
   async logout(userId: string, refreshToken: string): Promise<void> {
     await this.prisma.refreshToken.updateMany({
-      where: { userId, token: refreshToken },
+      where: {
+        userId,
+        token: { in: [this.hashToken(refreshToken), refreshToken] },
+      },
       data: { revokedAt: new Date() },
     });
   }
@@ -415,7 +493,7 @@ export class AuthService {
 
     const expiresAt = new Date(Date.now() + refreshMs);
     await this.prisma.refreshToken.create({
-      data: { token: refreshToken, userId: user.id, expiresAt },
+      data: { token: this.hashToken(refreshToken), userId: user.id, expiresAt },
     });
 
     return {
@@ -450,6 +528,9 @@ export class AuthService {
   private sanitizeUser(user: User): Partial<User> {
     const sanitized: Partial<User> = { ...user };
     delete sanitized.password;
+    delete sanitized.resetCode;
+    delete sanitized.resetCodeExpiresAt;
+    delete sanitized.resetAttempts;
     return sanitized;
   }
 

@@ -1,7 +1,12 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import { FirebaseMessagingProvider } from './firebase-messaging.provider';
-import { NotificationType } from '@prisma/client';
+import { NotificationType, UserRole } from '@prisma/client';
+
+/** Upper bound for list endpoints so one request cannot pull a whole table. */
+const MAX_PAGE_SIZE = 100;
+const BROADCAST_DB_BATCH = 1000;
+const FCM_MULTICAST_LIMIT = 500;
 
 @Injectable()
 export class NotificationsService {
@@ -18,7 +23,7 @@ export class NotificationsService {
         where: { userId },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
-        take: +limit,
+        take: Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE),
       }),
       this.prisma.notification.count({ where: { userId } }),
     ]);
@@ -62,7 +67,32 @@ export class NotificationsService {
     });
   }
 
+  /**
+   * Persists and pushes a notification. Many callers invoke this without
+   * awaiting it, so it must never reject: a failure here is logged and
+   * swallowed instead of becoming an unhandled rejection that could take the
+   * process down or fail the business operation that triggered it.
+   */
   async sendNotification(
+    userId: string,
+    type: NotificationType,
+    title: string,
+    body: string,
+    data?: any,
+  ) {
+    try {
+      return await this.deliverNotification(userId, type, title, body, data);
+    } catch (error) {
+      this.logger.error(
+        `Failed to send ${type} notification to user ${userId}: ${
+          error instanceof Error ? error.message : String(error)
+        }`,
+      );
+      return null;
+    }
+  }
+
+  private async deliverNotification(
     userId: string,
     type: NotificationType,
     title: string,
@@ -117,6 +147,56 @@ export class NotificationsService {
     }
 
     return notification;
+  }
+
+  /**
+   * Admin broadcast: stores a SYSTEM notification for every active user in the
+   * target role and pushes it to their registered devices in batches.
+   */
+  async broadcast(
+    title: string,
+    body: string,
+    targetRole: 'ALL' | UserRole = 'ALL',
+  ) {
+    const users = await this.prisma.user.findMany({
+      where: {
+        isActive: true,
+        ...(targetRole === 'ALL' ? {} : { role: targetRole }),
+      },
+      select: { id: true },
+    });
+    const userIds = users.map((u) => u.id);
+
+    for (let i = 0; i < userIds.length; i += BROADCAST_DB_BATCH) {
+      await this.prisma.notification.createMany({
+        data: userIds.slice(i, i + BROADCAST_DB_BATCH).map((userId) => ({
+          userId,
+          type: NotificationType.SYSTEM,
+          title,
+          body,
+          data: {},
+        })),
+      });
+    }
+
+    // Push is best-effort: failures are logged by the provider.
+    for (let i = 0; i < userIds.length; i += BROADCAST_DB_BATCH) {
+      const devices = await this.prisma.userDevice.findMany({
+        where: { userId: { in: userIds.slice(i, i + BROADCAST_DB_BATCH) } },
+        select: { fcmToken: true },
+      });
+      const tokens = devices.map((d) => d.fcmToken);
+      for (let j = 0; j < tokens.length; j += FCM_MULTICAST_LIMIT) {
+        await this.firebaseProvider.sendToMultipleDevices(
+          tokens.slice(j, j + FCM_MULTICAST_LIMIT),
+          title,
+          body,
+          { type: NotificationType.SYSTEM },
+        );
+      }
+    }
+
+    return { success: true, recipients: userIds.length };
   }
 
   private stringifyData(data: any): Record<string, string> {

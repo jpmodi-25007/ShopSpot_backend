@@ -5,9 +5,15 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
+import { omitPrivateShopFields } from '../../common/helpers/sanitize.helper';
 import { CreateShopDto, UpdateShopDto, NearbyQueryDto } from './dto/shop.dto';
 import { ShopStatus } from '@prisma/client';
 import { slugify } from '../../common/helpers/slugify.helper';
+
+/** Upper bound for list endpoints so one request cannot pull a whole table. */
+const MAX_PAGE_SIZE = 100;
+/** Max shops inspected for one nearby query (bounding-box candidates). */
+const NEARBY_CANDIDATE_LIMIT = 500;
 
 @Injectable()
 export class ShopsService {
@@ -123,7 +129,7 @@ export class ShopsService {
       },
     });
     if (!shop) throw new NotFoundException('Shop not found');
-    return shop;
+    return omitPrivateShopFields(shop);
   }
 
   async getShopProducts(shopId: string, page = 1, limit = 20) {
@@ -132,7 +138,7 @@ export class ShopsService {
         where: { shopId, isActive: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
-        take: limit,
+        take: Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE),
         include: {
           category: true,
           mediaAssets: { orderBy: { isPrimary: 'desc' } },
@@ -149,7 +155,7 @@ export class ShopsService {
         where: { shopId, isPublic: true },
         orderBy: { createdAt: 'desc' },
         skip: (page - 1) * limit,
-        take: limit,
+        take: Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE),
         include: {
           customer: { select: { id: true, name: true, avatarUrl: true } },
         },
@@ -168,33 +174,51 @@ export class ShopsService {
 
   async getNearbyShops(query: NearbyQueryDto) {
     const { lat, lng, radiusKm = 5, categoryId, page = 1, limit = 20 } = query;
-    const radiusDeg = radiusKm / 111; // ~111 km per degree
+    const pageSize = Math.min(Math.max(+limit || 20, 1), MAX_PAGE_SIZE);
+    const currentPage = Math.max(+page || 1, 1);
+
+    // Bounding box pre-filter. A degree of longitude shrinks with cos(latitude),
+    // so the longitude delta must be widened accordingly or nearby shops east /
+    // west of the user are missed at higher latitudes.
+    const latDelta = radiusKm / 111; // ~111 km per degree of latitude
+    const cosLat = Math.max(Math.cos((lat * Math.PI) / 180), 0.01);
+    const lngDelta = radiusKm / (111 * cosLat);
 
     const where: any = {
       status: ShopStatus.ACTIVE,
-      latitude: { gte: lat - radiusDeg, lte: lat + radiusDeg },
-      longitude: { gte: lng - radiusDeg, lte: lng + radiusDeg },
+      latitude: { gte: lat - latDelta, lte: lat + latDelta },
+      longitude: { gte: lng - lngDelta, lte: lng + lngDelta },
     };
     if (categoryId) where.categoryId = categoryId;
 
-    const shops = await this.prisma.shop.findMany({
+    const candidates = await this.prisma.shop.findMany({
       where,
       include: { category: true, _count: { select: { products: true } } },
       orderBy: { rating: 'desc' },
-      skip: (page - 1) * limit,
-      take: limit,
+      take: NEARBY_CANDIDATE_LIMIT,
     });
 
-    // Calculate accurate distance & filter
-    const withDistance = shops
+    // Exact distance filter happens BEFORE pagination so pages are complete
+    // and `total` reflects every shop inside the radius.
+    const inRadius = candidates
       .map((s) => ({
-        ...s,
+        ...omitPrivateShopFields(s),
         distanceKm: this.haversine(lat, lng, s.latitude, s.longitude),
       }))
-      .filter((s) => s.distanceKm <= radiusKm)
-      .sort((a, b) => a.distanceKm - b.distanceKm);
+      .filter((s) => s.distanceKm <= radiusKm);
 
-    return { data: withDistance, page, limit, total: withDistance.length };
+    // Nearest first across ALL pages (sorting after slicing only ordered each
+    // page in isolation).
+    const pageItems = inRadius
+      .sort((a, b) => a.distanceKm - b.distanceKm)
+      .slice((currentPage - 1) * pageSize, currentPage * pageSize);
+
+    return {
+      data: pageItems,
+      page: currentPage,
+      limit: pageSize,
+      total: inRadius.length,
+    };
   }
 
   async findShopByOwnerId(ownerId: string) {

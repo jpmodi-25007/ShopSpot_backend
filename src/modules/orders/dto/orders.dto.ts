@@ -5,6 +5,8 @@ import {
   IsEnum,
   IsObject,
   IsArray,
+  ArrayMinSize,
+  Min,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 import { DeliveryType, OrderStatus } from '@prisma/client';
@@ -16,24 +18,29 @@ export class CreateOrderDto {
 
   @ApiProperty()
   @IsArray()
+  @ArrayMinSize(1)
   items: any[];
 
   @ApiProperty()
   @IsNumber()
+  @Min(0)
   subtotal: number;
 
   @ApiPropertyOptional()
   @IsNumber()
+  @Min(0)
   @IsOptional()
   deliveryCharge?: number;
 
   @ApiPropertyOptional()
   @IsNumber()
+  @Min(0)
   @IsOptional()
   discount?: number;
 
   @ApiProperty()
   @IsNumber()
+  @Min(0)
   total: number;
 
   @ApiProperty()

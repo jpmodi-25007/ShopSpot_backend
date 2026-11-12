@@ -2,6 +2,7 @@ import {
   Injectable,
   NotFoundException,
   ConflictException,
+  BadRequestException,
 } from '@nestjs/common';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
@@ -12,16 +13,41 @@ import {
   ResolveReportDto,
   CreateShopDto,
   CreateProductDto,
+  CreateUserDto,
 } from './dto/admin.dto';
-import * as bcrypt from 'bcrypt';
+import * as argon2 from 'argon2';
+import { randomBytes } from 'crypto';
+
+/** Upper bound for list endpoints. */
+const MAX_PAGE_SIZE = 100;
+
+/** Parses ?page/?limit defensively: junk falls back to defaults, limit is capped. */
+function parsePagination(query: { page?: string; limit?: string }) {
+  const rawPage = parseInt(query?.page ?? '', 10);
+  const rawLimit = parseInt(query?.limit ?? '', 10);
+  const page = Number.isFinite(rawPage) && rawPage >= 1 ? rawPage : 1;
+  const limit =
+    Number.isFinite(rawLimit) && rawLimit >= 1
+      ? Math.min(rawLimit, MAX_PAGE_SIZE)
+      : 20;
+  return { page, limit };
+}
 
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
 
+  /**
+   * Admin-created accounts get a random, never-disclosed argon2 password (the
+   * same algorithm login verifies against). The owner sets their own password
+   * through the "forgot password" flow, so no shared default credential exists.
+   */
+  private generateUnusablePasswordHash(): Promise<string> {
+    return argon2.hash(randomBytes(32).toString('hex'));
+  }
+
   async getUsers(query: PaginationDto) {
-    const page = parseInt(query.page || '1', 10);
-    const limit = parseInt(query.limit || '20', 10);
+    const { page, limit } = parsePagination(query);
     const skip = (page - 1) * limit;
 
     const [users, total] = await Promise.all([
@@ -45,8 +71,7 @@ export class AdminService {
   }
 
   async getShops(query: PaginationDto) {
-    const page = parseInt(query.page || '1', 10);
-    const limit = parseInt(query.limit || '20', 10);
+    const { page, limit } = parsePagination(query);
     const skip = (page - 1) * limit;
 
     const [shops, total] = await Promise.all([
@@ -76,7 +101,7 @@ export class AdminService {
     });
 
     if (!owner) {
-      const defaultPassword = await bcrypt.hash('password123', 10);
+      const defaultPassword = await this.generateUnusablePasswordHash();
       owner = await this.prisma.user.create({
         data: {
           email: dto.ownerEmail,
@@ -168,13 +193,15 @@ export class AdminService {
     return product;
   }
 
-  async createUser(dto: any) {
-    const defaultPassword = await bcrypt.hash('password123', 10);
+  async createUser(dto: CreateUserDto) {
+    const defaultPassword = await this.generateUnusablePasswordHash();
     const user = await this.prisma.user.create({
       data: {
-        email: dto.email,
+        // Same normalisation as self-registration so the user can log in later.
+        email: dto.email.trim().toLowerCase(),
         name: dto.name,
-        mobile: dto.mobile,
+        // An empty string would collide on the unique mobile column.
+        mobile: dto.mobile?.trim() || undefined,
         password: defaultPassword,
         role: dto.role,
         avatarUrl: dto.avatarUrl,
@@ -213,7 +240,7 @@ export class AdminService {
     });
 
     if (!user) {
-      const defaultPassword = await bcrypt.hash('password123', 10);
+      const defaultPassword = await this.generateUnusablePasswordHash();
       user = await this.prisma.user.create({
         data: {
           email: dto.email,
@@ -252,8 +279,7 @@ export class AdminService {
   }
 
   async getInfluencers(query: PaginationDto) {
-    const page = parseInt(query.page || '1', 10);
-    const limit = parseInt(query.limit || '20', 10);
+    const { page, limit } = parsePagination(query);
     const skip = (page - 1) * limit;
 
     const [users, total] = await Promise.all([
@@ -299,7 +325,11 @@ export class AdminService {
     };
   }
 
-  async suspendUser(userId: string, dto: SuspendUserDto) {
+  async suspendUser(userId: string, dto: SuspendUserDto, actorId?: string) {
+    // An admin deactivating their own account would lock them out of the panel.
+    if (actorId && actorId === userId && !dto.isActive)
+      throw new BadRequestException('You cannot suspend your own account');
+
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
@@ -387,8 +417,7 @@ export class AdminService {
   }
 
   async getReports(query: PaginationDto) {
-    const page = parseInt(query.page || '1', 10);
-    const limit = parseInt(query.limit || '20', 10);
+    const { page, limit } = parsePagination(query);
     const skip = (page - 1) * limit;
 
     const [reports, total] = await Promise.all([
@@ -629,6 +658,9 @@ export class AdminService {
   }
 
   async updateSettings(dto: any) {
+    if (!dto || typeof dto !== 'object' || Array.isArray(dto)) {
+      throw new BadRequestException('Settings must be a JSON object');
+    }
     const fs = await import('fs');
     const path = await import('path');
     // Use a fixed, absolute resolved path to prevent any path-traversal
