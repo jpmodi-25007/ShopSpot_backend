@@ -3,6 +3,9 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
+  Put,
+  Delete,
   Body,
   UseGuards,
   Param,
@@ -19,6 +22,13 @@ import {
   CreateShopDto,
   CreateProductDto,
   CreateUserDto,
+  CreateInfluencerDto,
+  UpdateUserDto,
+  UpdateShopDto,
+  UpdateProductDto,
+  AdminNoteDto,
+  BulkReportDto,
+  AdminNotificationsQueryDto,
 } from '../dto/admin.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
@@ -32,6 +42,12 @@ import { UserRole } from '@prisma/client';
 @Controller('admin')
 export class AdminController {
   constructor(private readonly adminService: AdminService) {}
+
+  @Get('summary')
+  @ApiOperation({ summary: 'Badge counts for the admin sidebar and bell' })
+  getSummary(@CurrentUser('id') actorId: string) {
+    return this.adminService.getSummary(actorId);
+  }
 
   @Get('dashboard')
   @ApiOperation({ summary: 'Get main admin dashboard statistics' })
@@ -83,7 +99,7 @@ export class AdminController {
 
   @Post('influencers')
   @ApiOperation({ summary: 'Create a new influencer from admin panel' })
-  createInfluencer(@Body() dto: any) {
+  createInfluencer(@Body() dto: CreateInfluencerDto) {
     return this.adminService.createInfluencer(dto);
   }
 
@@ -107,6 +123,67 @@ export class AdminController {
     @CurrentUser('id') actorId: string,
   ) {
     return this.adminService.suspendUser(userId, dto, actorId);
+  }
+
+  @Patch('users/:id')
+  @ApiOperation({ summary: 'Edit a user profile' })
+  updateUser(
+    @Param('id') userId: string,
+    @Body() dto: UpdateUserDto,
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.adminService.updateUser(userId, dto, actorId);
+  }
+
+  @Delete('users/:id')
+  @ApiOperation({ summary: 'Delete a user that has no dependent history' })
+  deleteUser(@Param('id') userId: string, @CurrentUser('id') actorId: string) {
+    return this.adminService.deleteUser(userId, actorId);
+  }
+
+  @Put('users/:id/notes')
+  @ApiOperation({ summary: 'Save the internal admin note for a user' })
+  setUserNote(
+    @Param('id') userId: string,
+    @Body() dto: AdminNoteDto,
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.adminService.setUserNote(userId, dto.note, actorId);
+  }
+
+  @Patch('shops/:id')
+  @ApiOperation({ summary: 'Edit shop details, status and verification' })
+  updateShop(
+    @Param('id') shopId: string,
+    @Body() dto: UpdateShopDto,
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.adminService.updateShop(shopId, dto, actorId);
+  }
+
+  @Delete('shops/:id')
+  @ApiOperation({ summary: 'Delete a shop that has no dependent history' })
+  deleteShop(@Param('id') shopId: string, @CurrentUser('id') actorId: string) {
+    return this.adminService.deleteShop(shopId, actorId);
+  }
+
+  @Patch('products/:id')
+  @ApiOperation({ summary: 'Edit a product from the admin panel' })
+  updateProduct(
+    @Param('id') productId: string,
+    @Body() dto: UpdateProductDto,
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.adminService.updateProduct(productId, dto, actorId);
+  }
+
+  @Delete('products/:id')
+  @ApiOperation({ summary: 'Deactivate a product' })
+  deleteProduct(
+    @Param('id') productId: string,
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.adminService.deleteProduct(productId, actorId);
   }
 
   @Post('shops/:id/verify')
@@ -141,16 +218,44 @@ export class AdminController {
   resolveReport(@Param('id') reportId: string, @Body() dto: ResolveReportDto) {
     return this.adminService.resolveReport(reportId, dto);
   }
+
+  @Post('reports/bulk')
+  @ApiOperation({ summary: 'Resolve or remove several reported items at once' })
+  bulkReports(@Body() dto: BulkReportDto, @CurrentUser('id') actorId: string) {
+    return this.adminService.bulkReports(dto.ids, dto.action, actorId);
+  }
+
+  @Post('reports/:id/remove')
+  @ApiOperation({ summary: 'Take down the reported content and resolve' })
+  removeReportedContent(
+    @Param('id') reportId: string,
+    @CurrentUser('id') actorId: string,
+  ) {
+    return this.adminService.removeReportedContent(reportId, actorId);
+  }
+
   @Get('notifications')
-  @ApiOperation({ summary: 'Get all admin system notifications' })
-  getAdminNotifications() {
-    return this.adminService.getAdminNotifications();
+  @ApiOperation({ summary: "Get the signed-in admin's notifications" })
+  getAdminNotifications(
+    @CurrentUser('id') actorId: string,
+    @Query() query: AdminNotificationsQueryDto,
+  ) {
+    return this.adminService.getAdminNotifications(actorId, query);
   }
 
   @Post('notifications/mark-read')
-  @ApiOperation({ summary: 'Mark all notifications as read' })
-  markNotificationsRead() {
-    return this.adminService.markNotificationsRead();
+  @ApiOperation({ summary: "Mark the admin's notifications as read" })
+  markNotificationsRead(@CurrentUser('id') actorId: string) {
+    return this.adminService.markNotificationsRead(actorId);
+  }
+
+  @Post('notifications/:id/read')
+  @ApiOperation({ summary: "Mark one of the admin's notifications as read" })
+  markNotificationRead(
+    @CurrentUser('id') actorId: string,
+    @Param('id') notificationId: string,
+  ) {
+    return this.adminService.markNotificationRead(actorId, notificationId);
   }
 
   @Get('settings')

@@ -108,70 +108,439 @@ export class AnalyticsService {
     };
   }
 
-  async getAdminAnalytics() {
+  async getAdminAnalytics(period: string = 'month') {
+    const range = this.resolvePeriod(period);
+    const prev = this.previousPeriod(range);
+
     const [
       totalUsers,
       totalShops,
-      totalOrders,
-      totalRevenueData,
+      periodOrders,
+      prevOrders,
+      periodUsers,
+      prevUsers,
+      periodShops,
+      prevShops,
+      deliveredRevenue,
+      prevDeliveredRevenue,
+      confirmedRevenue,
+      subscriptionRevenue,
       negotiations,
-      topShops,
+      orderRevenueByShop,
+      cityGroups,
+      mapShops,
+      periodViews,
+      prevViews,
     ] = await Promise.all([
       this.prisma.user.count(),
-      this.prisma.shop.count(),
-      this.prisma.order.count(),
+      this.prisma.shop.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.order.count({
+        where: { createdAt: { gte: range.from, lte: range.to } },
+      }),
+      this.prisma.order.count({
+        where: { createdAt: { gte: prev.from, lte: prev.to } },
+      }),
+      this.prisma.user.count({
+        where: { createdAt: { gte: range.from, lte: range.to } },
+      }),
+      this.prisma.user.count({
+        where: { createdAt: { gte: prev.from, lte: prev.to } },
+      }),
+      this.prisma.shop.count({
+        where: { createdAt: { gte: range.from, lte: range.to } },
+      }),
+      this.prisma.shop.count({
+        where: { createdAt: { gte: prev.from, lte: prev.to } },
+      }),
       this.prisma.order.aggregate({
-        where: { status: 'DELIVERED' },
+        where: {
+          status: 'DELIVERED',
+          createdAt: { gte: range.from, lte: range.to },
+        },
         _sum: { total: true },
       }),
+      this.prisma.order.aggregate({
+        where: {
+          status: 'DELIVERED',
+          createdAt: { gte: prev.from, lte: prev.to },
+        },
+        _sum: { total: true },
+      }),
+      this.prisma.order.aggregate({
+        where: {
+          status: 'CONFIRMED',
+          createdAt: { gte: range.from, lte: range.to },
+        },
+        _sum: { total: true },
+      }),
+      this.prisma.subscription.aggregate({
+        where: {
+          isActive: true,
+          createdAt: { gte: range.from, lte: range.to },
+        },
+        _sum: { price: true },
+      }),
       this.prisma.negotiation.findMany({
-        take: 500,
-        orderBy: { createdAt: 'desc' },
+        where: { createdAt: { gte: range.from, lte: range.to } },
+        select: { createdAt: true, status: true },
+        take: 5000,
+      }),
+      this.prisma.order.groupBy({
+        by: ['shopId'],
+        where: {
+          status: { in: ['DELIVERED', 'CONFIRMED'] },
+          createdAt: { gte: range.from, lte: range.to },
+        },
+        _sum: { total: true },
+        _count: { _all: true },
+        orderBy: { _sum: { total: 'desc' } },
+        take: 5,
+      }),
+      this.prisma.shop.groupBy({
+        by: ['city'],
+        where: { status: 'ACTIVE' },
+        _count: { _all: true },
+        orderBy: { _count: { city: 'desc' } },
+        take: 12,
       }),
       this.prisma.shop.findMany({
-        take: 3,
-        orderBy: { rating: 'desc' },
+        where: {
+          status: 'ACTIVE',
+          NOT: { AND: [{ latitude: 0 }, { longitude: 0 }] },
+        },
+        select: {
+          id: true,
+          name: true,
+          city: true,
+          latitude: true,
+          longitude: true,
+        },
+        take: 250,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.analyticsEvent.count({
+        where: {
+          eventType: { in: ['shop_view', 'product_view'] },
+          createdAt: { gte: range.from, lte: range.to },
+        },
+      }),
+      this.prisma.analyticsEvent.count({
+        where: {
+          eventType: { in: ['shop_view', 'product_view'] },
+          createdAt: { gte: prev.from, lte: prev.to },
+        },
       }),
     ]);
 
-    // Group negotiations by day of week (Mon, Tue, etc.)
-    const days = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-    const trendMap = new Map();
-    days.forEach((d) =>
-      trendMap.set(d, { name: d, initiated: 0, completed: 0 }),
-    );
+    const delivered = Number(deliveredRevenue._sum.total || 0);
+    const confirmed = Number(confirmedRevenue._sum.total || 0);
+    const subscriptions = Number(subscriptionRevenue._sum.price || 0);
+    const moneyTotal = delivered + confirmed + subscriptions;
 
-    negotiations.forEach((n) => {
-      const dayName = days[n.createdAt.getDay()];
-      const entry = trendMap.get(dayName);
-      entry.initiated += 1;
-      if (n.status === 'ACCEPTED') {
-        entry.completed += 1;
-      }
+    const pct = (amount: number) =>
+      moneyTotal > 0 ? Math.round((amount / moneyTotal) * 1000) / 10 : 0;
+
+    const revenueBreakdown = [
+      {
+        name: 'Delivered orders',
+        value: pct(delivered),
+        amount: delivered,
+        color: '#0F766E',
+      },
+      {
+        name: 'Confirmed (in progress)',
+        value: pct(confirmed),
+        amount: confirmed,
+        color: '#14B8A6',
+      },
+      {
+        name: 'Subscriptions',
+        value: pct(subscriptions),
+        amount: subscriptions,
+        color: '#F59E0B',
+      },
+    ].filter((row) => row.amount > 0 || moneyTotal === 0);
+
+    // If everything is zero, keep the three slices at 0 so the UI still labels them.
+    if (revenueBreakdown.length === 0) {
+      revenueBreakdown.push(
+        { name: 'Delivered orders', value: 0, amount: 0, color: '#0F766E' },
+        {
+          name: 'Confirmed (in progress)',
+          value: 0,
+          amount: 0,
+          color: '#14B8A6',
+        },
+        { name: 'Subscriptions', value: 0, amount: 0, color: '#F59E0B' },
+      );
+    }
+
+    const negotiationTrends = this.bucketNegotiations(negotiations, range);
+
+    const shopIds = orderRevenueByShop.map((r) => r.shopId);
+    const shops = shopIds.length
+      ? await this.prisma.shop.findMany({
+          where: { id: { in: shopIds } },
+          select: { id: true, name: true, city: true, logoUrl: true },
+        })
+      : [];
+    const shopById = new Map(shops.map((s) => [s.id, s]));
+    const topShops = orderRevenueByShop.map((row, idx) => {
+      const shop = shopById.get(row.shopId);
+      return {
+        id: row.shopId,
+        rank: `#${idx + 1}`,
+        name: shop?.name || 'Unknown shop',
+        location: shop?.city || 'India',
+        revenue: Number(row._sum.total || 0),
+        orders: row._count._all,
+        logoUrl: shop?.logoUrl || null,
+      };
     });
 
-    // Sort top shops for response
-    const topShopsData = topShops.map((s, idx) => ({
-      rank: `#${idx + 1}`,
-      name: s.name,
-      location: s.city || 'India',
-      revenue: s.rating ? `${String(s.rating)} Stars` : 'No Rating',
-      views: `${s.reviewCount} Reviews`,
-    }));
+    const cityTotal =
+      cityGroups.reduce((sum, c) => sum + c._count._all, 0) || 1;
+    const cityDistribution = cityGroups
+      .map((c) => ({
+        city: c.city || 'Unspecified',
+        count: c._count._all,
+        pct: Math.round((c._count._all / cityTotal) * 1000) / 10,
+      }))
+      .sort((a, b) => b.count - a.count);
+
+    // India bounding box used by the admin SVG map (no external map tiles / API keys).
+    const INDIA = { minLat: 6.5, maxLat: 37.5, minLng: 68.0, maxLng: 97.5 };
+    const project = (lat: number, lng: number) => ({
+      x: ((lng - INDIA.minLng) / (INDIA.maxLng - INDIA.minLng)) * 100,
+      y: ((INDIA.maxLat - lat) / (INDIA.maxLat - INDIA.minLat)) * 100,
+    });
+
+    // Aggregate identical/near-identical seed coordinates into city bubbles so
+    // the map stays readable when hundreds of shops share the same lat/lng.
+    const clusterMap = new Map<
+      string,
+      { city: string; count: number; latSum: number; lngSum: number }
+    >();
+    for (const shop of mapShops) {
+      if (
+        shop.latitude < INDIA.minLat ||
+        shop.latitude > INDIA.maxLat ||
+        shop.longitude < INDIA.minLng ||
+        shop.longitude > INDIA.maxLng
+      ) {
+        continue;
+      }
+      const city = shop.city || 'Unspecified';
+      const key = `${city}|${shop.latitude.toFixed(3)}|${shop.longitude.toFixed(3)}`;
+      const row = clusterMap.get(key) || {
+        city,
+        count: 0,
+        latSum: 0,
+        lngSum: 0,
+      };
+      row.count += 1;
+      row.latSum += shop.latitude;
+      row.lngSum += shop.longitude;
+      clusterMap.set(key, row);
+    }
+    const mapPoints = [...clusterMap.entries()]
+      .map(([key, row]) => {
+        const lat = row.latSum / row.count;
+        const lng = row.lngSum / row.count;
+        const { x, y } = project(lat, lng);
+        return {
+          id: key,
+          name: row.city,
+          city: row.city,
+          count: row.count,
+          lat,
+          lng,
+          x,
+          y,
+        };
+      })
+      .sort((a, b) => b.count - a.count);
 
     return {
+      period: range.key,
+      periodLabel: range.label,
       totalUsers,
       totalShops,
-      totalOrders,
-      totalRevenue: totalRevenueData._sum.total || 0,
-      revenueBreakdown: [
-        { name: 'Subscription Fees', value: 65, color: '#0F766E' },
-        { name: 'Ad Credits', value: 25, color: '#14B8A6' },
-        { name: 'Transaction Fees', value: 10, color: '#F59E0B' },
-      ],
-      negotiationTrends: Array.from(trendMap.values()),
-      topShops: topShopsData,
+      totalOrders: periodOrders,
+      totalRevenue: delivered,
+      views: periodViews,
+      trends: {
+        revenue: this.trendPct(
+          delivered,
+          Number(prevDeliveredRevenue._sum.total || 0),
+        ),
+        shops: this.trendPct(periodShops, prevShops),
+        orders: this.trendPct(periodOrders, prevOrders),
+        users: this.trendPct(periodUsers, prevUsers),
+        views: this.trendPct(periodViews, prevViews),
+      },
+      revenueBreakdown,
+      negotiationTrends,
+      topShops,
+      cityDistribution,
+      mapPoints,
+      mapBounds: INDIA,
     };
+  }
+
+  /** Parses today/week/month/all into an inclusive [from, to] window (local server time). */
+  private resolvePeriod(period?: string) {
+    const key = (period || 'month').toLowerCase();
+    const to = new Date();
+    const from = new Date(to);
+    if (key === 'today') {
+      from.setHours(0, 0, 0, 0);
+      return { key: 'today', label: 'Today', from, to };
+    }
+    if (key === 'week') {
+      from.setDate(from.getDate() - 6);
+      from.setHours(0, 0, 0, 0);
+      return { key: 'week', label: 'Last 7 days', from, to };
+    }
+    if (key === 'all') {
+      return {
+        key: 'all',
+        label: 'All time',
+        from: new Date(0),
+        to,
+      };
+    }
+    // month (default)
+    from.setDate(from.getDate() - 29);
+    from.setHours(0, 0, 0, 0);
+    return { key: 'month', label: 'Last 30 days', from, to };
+  }
+
+  /** Same-length window immediately before `range` (for % change). */
+  private previousPeriod(range: { from: Date; to: Date; key: string }) {
+    if (range.key === 'all') {
+      return { from: new Date(0), to: new Date(0) }; // forces prev totals to 0
+    }
+    const ms = range.to.getTime() - range.from.getTime();
+    const to = new Date(range.from.getTime() - 1);
+    const from = new Date(to.getTime() - ms);
+    return { from, to };
+  }
+
+  private trendPct(current: number, previous: number): number {
+    if (previous <= 0) return current > 0 ? 100 : 0;
+    return Math.round(((current - previous) / previous) * 1000) / 10;
+  }
+
+  /** Buckets negotiations into day labels for the selected window. */
+  private bucketNegotiations(
+    negotiations: { createdAt: Date; status: string }[],
+    range: { from: Date; to: Date; key: string },
+  ) {
+    if (range.key === 'today') {
+      const hours = Array.from({ length: 8 }, (_, i) => {
+        const h = i * 3;
+        return {
+          name: `${String(h).padStart(2, '0')}:00`,
+          initiated: 0,
+          completed: 0,
+          hour: h,
+        };
+      });
+      for (const n of negotiations) {
+        const h = n.createdAt.getHours();
+        const bucket =
+          hours.find((b) => h >= b.hour && h < b.hour + 3) ||
+          hours[hours.length - 1];
+        bucket.initiated += 1;
+        if (n.status === 'ACCEPTED') bucket.completed += 1;
+      }
+      return hours.map(({ name, initiated, completed }) => ({
+        name,
+        initiated,
+        completed,
+      }));
+    }
+
+    if (range.key === 'week' || range.key === 'month') {
+      const dayMs = 24 * 60 * 60 * 1000;
+      const days: {
+        name: string;
+        initiated: number;
+        completed: number;
+        key: string;
+      }[] = [];
+      const cursor = new Date(range.from);
+      cursor.setHours(0, 0, 0, 0);
+      const end = new Date(range.to);
+      end.setHours(0, 0, 0, 0);
+      // Cap chart bars so Month stays readable (≈10 buckets of ~3 days).
+      const totalDays = Math.max(
+        1,
+        Math.round((end.getTime() - cursor.getTime()) / dayMs) + 1,
+      );
+      const step =
+        range.key === 'month' ? Math.max(1, Math.ceil(totalDays / 10)) : 1;
+      for (let t = cursor.getTime(); t <= end.getTime(); t += step * dayMs) {
+        const d = new Date(t);
+        const label =
+          range.key === 'week'
+            ? d.toLocaleDateString('en-IN', { weekday: 'short' })
+            : d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' });
+        days.push({
+          name: label,
+          initiated: 0,
+          completed: 0,
+          key: d.toISOString().slice(0, 10),
+        });
+      }
+      for (const n of negotiations) {
+        const idx = Math.min(
+          days.length - 1,
+          Math.floor(
+            (n.createdAt.getTime() - cursor.getTime()) / (step * dayMs),
+          ),
+        );
+        if (idx < 0) continue;
+        days[idx].initiated += 1;
+        if (n.status === 'ACCEPTED') days[idx].completed += 1;
+      }
+      return days.map(({ name, initiated, completed }) => ({
+        name,
+        initiated,
+        completed,
+      }));
+    }
+
+    // all time — by month of the last 12 calendar months
+    const months: {
+      name: string;
+      initiated: number;
+      completed: number;
+      key: string;
+    }[] = [];
+    const now = new Date();
+    for (let i = 11; i >= 0; i--) {
+      const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        name: d.toLocaleDateString('en-IN', { month: 'short' }),
+        initiated: 0,
+        completed: 0,
+        key: `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`,
+      });
+    }
+    for (const n of negotiations) {
+      const key = `${n.createdAt.getFullYear()}-${String(n.createdAt.getMonth() + 1).padStart(2, '0')}`;
+      const bucket = months.find((m) => m.key === key);
+      if (!bucket) continue;
+      bucket.initiated += 1;
+      if (n.status === 'ACCEPTED') bucket.completed += 1;
+    }
+    return months.map(({ name, initiated, completed }) => ({
+      name,
+      initiated,
+      completed,
+    }));
   }
 
   async getInfluencerAnalytics(userId: string) {

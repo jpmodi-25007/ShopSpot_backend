@@ -1,4 +1,4 @@
-import { IsString, IsOptional, IsObject } from 'class-validator';
+import { IsString, IsOptional, IsObject, IsIn } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
 
 export class TrackEventDto {
@@ -25,4 +25,16 @@ export class TrackEventDto {
   @IsObject()
   @IsOptional()
   metadata?: any;
+}
+
+export class AdminAnalyticsQueryDto {
+  /** today | week | month | all — controls every time-bound series on the admin analytics page. */
+  @ApiPropertyOptional({
+    enum: ['today', 'week', 'month', 'all'],
+    default: 'month',
+  })
+  @IsOptional()
+  @IsString()
+  @IsIn(['today', 'week', 'month', 'all'])
+  period?: string;
 }

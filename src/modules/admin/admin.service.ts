@@ -4,6 +4,7 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
+import { Prisma, ReportStatus, ShopStatus, UserRole } from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   VerifyShopDto,
@@ -14,6 +15,11 @@ import {
   CreateShopDto,
   CreateProductDto,
   CreateUserDto,
+  CreateInfluencerDto,
+  UpdateUserDto,
+  UpdateShopDto,
+  UpdateProductDto,
+  BulkReportAction,
 } from './dto/admin.dto';
 import * as argon2 from 'argon2';
 import { randomBytes } from 'crypto';
@@ -33,9 +39,142 @@ function parsePagination(query: { page?: string; limit?: string }) {
   return { page, limit };
 }
 
+/** Case-insensitive "contains" filter for a text column. */
+const like = (value: string): Prisma.StringFilter => ({
+  contains: value,
+  mode: 'insensitive',
+});
+
+/** Trimmed search text, or undefined when blank. */
+function cleanSearch(value?: string): string | undefined {
+  const v = value?.trim();
+  return v ? v : undefined;
+}
+
+/** Parses an ISO date filter; junk is rejected rather than silently ignored. */
+function parseCreatedFrom(value?: string): Date | undefined {
+  if (!value) return undefined;
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime()))
+    throw new BadRequestException('createdFrom must be a valid ISO date');
+  return d;
+}
+
+function parseEnum<T extends string>(
+  value: string | undefined,
+  allowed: readonly T[],
+  label: string,
+): T | undefined {
+  if (!value) return undefined;
+  const upper = value.toUpperCase() as T;
+  if (!allowed.includes(upper))
+    throw new BadRequestException(
+      `Invalid ${label}. Allowed: ${allowed.join(', ')}`,
+    );
+  return upper;
+}
+
+/** '' clears an optional text column; undefined leaves it untouched. */
+function nullable(value: string | undefined): string | null | undefined {
+  if (value === undefined) return undefined;
+  const v = value.trim();
+  return v === '' ? null : v;
+}
+
+function pageMeta(total: number, page: number, limit: number) {
+  return { total, page, limit, totalPages: Math.ceil(total / limit) };
+}
+
 @Injectable()
 export class AdminService {
   constructor(private readonly prisma: PrismaService) {}
+
+  /** Best-effort audit trail; never blocks the admin action itself. */
+  private async audit(
+    actorId: string | undefined,
+    action: string,
+    entityType: string,
+    entityId: string,
+    oldValue?: Prisma.InputJsonValue,
+    newValue?: Prisma.InputJsonValue,
+  ) {
+    if (!actorId) return;
+    try {
+      await this.prisma.auditLog.create({
+        data: {
+          actorId,
+          actorRole: 'ADMIN',
+          action,
+          entityType,
+          entityId,
+          oldValue,
+          newValue,
+        },
+      });
+    } catch {
+      // audit failures must not fail the action
+    }
+  }
+
+  /** Latest admin note for a user (stored in the audit log, no schema change). */
+  private async latestNote(userId: string): Promise<string> {
+    const row = await this.prisma.auditLog.findFirst({
+      where: { action: 'ADMIN_NOTE', entityType: 'USER', entityId: userId },
+      orderBy: { createdAt: 'desc' },
+    });
+    const note = (row?.newValue as { note?: string } | null)?.note;
+    return note ?? '';
+  }
+
+  async setUserNote(userId: string, note: string, actorId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    await this.prisma.auditLog.create({
+      data: {
+        actorId,
+        actorRole: 'ADMIN',
+        action: 'ADMIN_NOTE',
+        entityType: 'USER',
+        entityId: userId,
+        newValue: { note },
+      },
+    });
+    return { note };
+  }
+
+  /** Counts that drive the sidebar badges and bell. */
+  async getSummary(actorId: string) {
+    const [
+      pendingReports,
+      unreadNotifications,
+      pendingShops,
+      pendingInfluencers,
+    ] = await Promise.all([
+      this.prisma.contentReport.count({ where: { status: 'PENDING' } }),
+      this.prisma.notification.count({
+        where: { userId: actorId, isRead: false },
+      }),
+      this.prisma.shop.count({
+        where: { isKycVerified: false, status: 'ACTIVE' },
+      }),
+      this.prisma.user.count({
+        where: {
+          role: 'INFLUENCER',
+          isActive: true,
+          OR: [
+            { influencerProfile: { is: null } },
+            { influencerProfile: { verificationStatus: 'PENDING' } },
+          ],
+        },
+      }),
+    ]);
+    return {
+      pendingReports,
+      unreadNotifications,
+      pendingShops,
+      pendingInfluencers,
+    };
+  }
 
   /**
    * Admin-created accounts get a random, never-disclosed argon2 password (the
@@ -50,74 +189,128 @@ export class AdminService {
     const { page, limit } = parsePagination(query);
     const skip = (page - 1) * limit;
 
+    const where: Prisma.UserWhereInput = {};
+    const search = cleanSearch(query.search);
+    if (search) {
+      where.OR = [
+        { name: like(search) },
+        { email: like(search) },
+        { mobile: like(search) },
+      ];
+    }
+    const role = parseEnum(query.role, Object.values(UserRole), 'role');
+    if (role) where.role = role;
+    const status = parseEnum(
+      query.status,
+      ['ACTIVE', 'SUSPENDED'] as const,
+      'status',
+    );
+    if (status) where.isActive = status === 'ACTIVE';
+    const from = parseCreatedFrom(query.createdFrom);
+    if (from) where.createdAt = { gte: from };
+
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
+        where,
         skip,
         take: limit,
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.user.count(),
+      this.prisma.user.count({ where }),
     ]);
 
-    return {
-      data: users,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: users, meta: pageMeta(total, page, limit) };
   }
 
   async getShops(query: PaginationDto) {
     const { page, limit } = parsePagination(query);
     const skip = (page - 1) * limit;
 
+    const where: Prisma.ShopWhereInput = {};
+    const search = cleanSearch(query.search);
+    if (search) {
+      where.OR = [
+        { name: like(search) },
+        { city: like(search) },
+        { owner: { name: like(search) } },
+        { owner: { email: like(search) } },
+        { category: { name: like(search) } },
+      ];
+    }
+    const status = parseEnum(
+      query.status,
+      ['VERIFIED', 'PENDING', 'ACTIVE', 'INACTIVE', 'SUSPENDED'] as const,
+      'status',
+    );
+    if (status === 'VERIFIED') {
+      where.isKycVerified = true;
+      where.status = ShopStatus.ACTIVE;
+    } else if (status === 'PENDING') {
+      where.isKycVerified = false;
+      where.status = ShopStatus.ACTIVE;
+    } else if (status) {
+      where.status = status;
+    }
+    if (query.categoryId) where.categoryId = query.categoryId;
+    const from = parseCreatedFrom(query.createdFrom);
+    if (from) where.createdAt = { gte: from };
+
     const [shops, total] = await Promise.all([
       this.prisma.shop.findMany({
+        where,
         skip,
         take: limit,
-        include: { owner: true },
+        include: {
+          owner: true,
+          category: { select: { id: true, name: true } },
+        },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.shop.count(),
+      this.prisma.shop.count({ where }),
     ]);
 
-    return {
-      data: shops,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: shops, meta: pageMeta(total, page, limit) };
   }
 
   async createShop(dto: CreateShopDto) {
+    // Same normalisation as self-registration, otherwise "A@x.com" and
+    // "a@x.com" would become two different accounts.
+    const ownerEmail = dto.ownerEmail.trim().toLowerCase();
+    if (!ownerEmail.includes('@'))
+      throw new BadRequestException('Please provide a valid owner email');
+    if (!dto.name?.trim())
+      throw new BadRequestException('Shop name is required');
+    if (dto.categoryId) {
+      const category = await this.prisma.category.findUnique({
+        where: { id: dto.categoryId },
+      });
+      if (!category) throw new BadRequestException('Category not found');
+    }
+
     let owner = await this.prisma.user.findUnique({
-      where: { email: dto.ownerEmail },
+      where: { email: ownerEmail },
     });
 
     if (!owner) {
       const defaultPassword = await this.generateUnusablePasswordHash();
       owner = await this.prisma.user.create({
         data: {
-          email: dto.ownerEmail,
+          email: ownerEmail,
           name: dto.ownerName || 'Shop Owner',
           password: defaultPassword,
           role: 'SHOPKEEPER',
         },
       });
     } else {
+      if (owner.role !== 'SHOPKEEPER')
+        throw new ConflictException(
+          `${ownerEmail} is registered as ${owner.role}, not a shop owner.`,
+        );
       const existingShop = await this.prisma.shop.findUnique({
         where: { ownerId: owner.id },
       });
       if (existingShop) {
-        throw new ConflictException(
-          `User ${dto.ownerEmail} already owns a shop.`,
-        );
+        throw new ConflictException(`User ${ownerEmail} already owns a shop.`);
       }
     }
 
@@ -234,16 +427,27 @@ export class AdminService {
     return user;
   }
 
-  async createInfluencer(dto: any) {
-    let user = await this.prisma.user.findUnique({
-      where: { email: dto.email },
-    });
+  async createInfluencer(dto: CreateInfluencerDto) {
+    const email = dto.email.trim().toLowerCase();
+    let user = await this.prisma.user.findUnique({ where: { email } });
 
-    if (!user) {
+    if (user) {
+      if (user.role !== 'INFLUENCER')
+        throw new ConflictException(
+          `${email} is registered as ${user.role}, not an influencer.`,
+        );
+      const existing = await this.prisma.influencerProfile.findUnique({
+        where: { userId: user.id },
+      });
+      if (existing)
+        throw new ConflictException(
+          `${email} already has an influencer profile.`,
+        );
+    } else {
       const defaultPassword = await this.generateUnusablePasswordHash();
       user = await this.prisma.user.create({
         data: {
-          email: dto.email,
+          email,
           name: dto.name,
           password: defaultPassword,
           role: 'INFLUENCER',
@@ -251,17 +455,24 @@ export class AdminService {
       });
     }
 
-    const nameStr = String(dto.name || 'influencer');
-    const baseSlug = nameStr
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/(^-|-$)/g, '');
+    const baseSlug =
+      String(dto.name || 'influencer')
+        .toLowerCase()
+        .replace(/[^a-z0-9]+/g, '-')
+        .replace(/(^-|-$)/g, '') || 'influencer';
+    let username = baseSlug;
+    let counter = 1;
+    while (
+      await this.prisma.influencerProfile.findUnique({ where: { username } })
+    ) {
+      username = `${baseSlug}-${counter++}`;
+    }
 
     return this.prisma.influencerProfile.create({
       data: {
         userId: user.id,
         displayName: dto.name,
-        username: baseSlug,
+        username,
         bio: dto.bio,
         city: dto.city,
         categories: dto.categoryId ? [dto.categoryId] : [],
@@ -282,46 +493,77 @@ export class AdminService {
     const { page, limit } = parsePagination(query);
     const skip = (page - 1) * limit;
 
+    const where: Prisma.UserWhereInput = { role: 'INFLUENCER' };
+    const and: Prisma.UserWhereInput[] = [];
+    const search = cleanSearch(query.search);
+    if (search) {
+      and.push({
+        OR: [
+          { name: like(search) },
+          { email: like(search) },
+          { influencerProfile: { displayName: like(search) } },
+          { influencerProfile: { username: like(search) } },
+        ],
+      });
+    }
+    const status = parseEnum(
+      query.status,
+      ['VERIFIED', 'PENDING', 'REJECTED', 'SUSPENDED'] as const,
+      'status',
+    );
+    if (status === 'SUSPENDED') {
+      where.isActive = false;
+    } else if (status === 'PENDING') {
+      // Users without a profile yet are effectively pending.
+      and.push({
+        OR: [
+          { influencerProfile: { is: null } },
+          { influencerProfile: { verificationStatus: 'PENDING' } },
+        ],
+      });
+    } else if (status) {
+      and.push({ influencerProfile: { verificationStatus: status } });
+    }
+    const from = parseCreatedFrom(query.createdFrom);
+    if (from) where.createdAt = { gte: from };
+    if (and.length) where.AND = and;
+
     const [users, total] = await Promise.all([
       this.prisma.user.findMany({
         skip,
         take: limit,
-        where: { role: 'INFLUENCER' },
+        where,
         include: { influencerProfile: true },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.user.count({ where: { role: 'INFLUENCER' } }),
+      this.prisma.user.count({ where }),
     ]);
 
-    const influencers = users.map((u) => {
-      if (u.influencerProfile) {
-        return {
-          ...u.influencerProfile,
-          user: u,
-        };
-      } else {
-        return {
-          id: `temp_${u.id}`,
-          userId: u.id,
-          displayName: u.name || 'New Influencer',
-          username: `user_${u.id.substring(0, 8)}`,
-          verificationStatus: 'PENDING',
-          followers: 0,
-          socialPlatform: null,
-          createdAt: u.createdAt,
-          user: u,
-        };
-      }
-    });
+    const influencers = users.map((u) =>
+      u.influencerProfile
+        ? { ...u.influencerProfile, user: u }
+        : this.placeholderInfluencer(u),
+    );
 
+    return { data: influencers, meta: pageMeta(total, page, limit) };
+  }
+
+  /** Shape used for INFLUENCER users that have not created a profile yet. */
+  private placeholderInfluencer(u: {
+    id: string;
+    name: string | null;
+    createdAt: Date;
+  }) {
     return {
-      data: influencers,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
+      id: `temp_${u.id}`,
+      userId: u.id,
+      displayName: u.name || 'New Influencer',
+      username: `user_${u.id.substring(0, 8)}`,
+      verificationStatus: 'PENDING',
+      followers: 0,
+      socialPlatform: null,
+      createdAt: u.createdAt,
+      user: u,
     };
   }
 
@@ -333,10 +575,112 @@ export class AdminService {
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw new NotFoundException('User not found');
 
-    return this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: userId },
       data: { isActive: dto.isActive },
     });
+    if (!dto.isActive) {
+      // Cut off sessions immediately rather than waiting for token expiry.
+      await this.prisma.refreshToken.deleteMany({ where: { userId } });
+    }
+    await this.audit(
+      actorId,
+      dto.isActive ? 'USER_ACTIVATE' : 'USER_SUSPEND',
+      'USER',
+      userId,
+      { isActive: user.isActive },
+      { isActive: dto.isActive },
+    );
+    return updated;
+  }
+
+  async updateUser(userId: string, dto: UpdateUserDto, actorId: string) {
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+
+    const data: Prisma.UserUpdateInput = {};
+    if (dto.name !== undefined) {
+      const name = dto.name.trim();
+      if (!name) throw new BadRequestException('Name cannot be empty');
+      data.name = name;
+    }
+    if (dto.email !== undefined) data.email = dto.email.trim().toLowerCase();
+    if (dto.mobile !== undefined) data.mobile = nullable(dto.mobile);
+    if (dto.avatarUrl !== undefined) data.avatarUrl = nullable(dto.avatarUrl);
+    if (Object.keys(data).length === 0)
+      throw new BadRequestException('Nothing to update');
+
+    // Duplicate email/mobile surfaces as 409 via PrismaExceptionFilter.
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data,
+    });
+    await this.audit(
+      actorId,
+      'USER_UPDATE',
+      'USER',
+      userId,
+      { name: user.name, email: user.email, mobile: user.mobile },
+      { name: updated.name, email: updated.email, mobile: updated.mobile },
+    );
+    return updated;
+  }
+
+  /**
+   * Hard-deletes a user only when nothing business-relevant depends on them.
+   * Everything runs in one transaction, so a blocked delete leaves no
+   * half-deleted data behind.
+   */
+  async deleteUser(userId: string, actorId: string) {
+    if (userId === actorId)
+      throw new BadRequestException('You cannot delete your own account');
+    const user = await this.prisma.user.findUnique({ where: { id: userId } });
+    if (!user) throw new NotFoundException('User not found');
+    if (user.role === 'ADMIN')
+      throw new BadRequestException('Admin accounts cannot be deleted here');
+
+    try {
+      await this.prisma.$transaction(async (tx) => {
+        const shop = await tx.shop.findUnique({ where: { ownerId: userId } });
+        if (shop) await this.deleteShopInTx(tx, shop.id);
+        await tx.influencerProfile.deleteMany({ where: { userId } });
+        await tx.analyticsEvent.deleteMany({ where: { userId } });
+        await tx.user.delete({ where: { id: userId } });
+      });
+    } catch (e) {
+      this.rethrowIfBlocked(
+        e,
+        'This user has orders, reservations, reviews, messages or other history and cannot be deleted. Suspend the account instead.',
+      );
+    }
+    await this.audit(actorId, 'USER_DELETE', 'USER', userId, {
+      email: user.email,
+      name: user.name,
+      role: user.role,
+    });
+    return { success: true };
+  }
+
+  private rethrowIfBlocked(e: unknown, message: string): never {
+    if (e instanceof Prisma.PrismaClientKnownRequestError && e.code === 'P2003')
+      throw new ConflictException(message);
+    throw e;
+  }
+
+  /** Removes a shop plus its trivially-owned rows; FK restricts block the rest. */
+  private async deleteShopInTx(tx: Prisma.TransactionClient, shopId: string) {
+    const productIds = (
+      await tx.product.findMany({ where: { shopId }, select: { id: true } })
+    ).map((p) => p.id);
+    // View logs and media are not business records; orders, reservations,
+    // negotiations, reviews, subscriptions and campaigns are and will block.
+    await tx.analyticsEvent.deleteMany({
+      where: { OR: [{ shopId }, { productId: { in: productIds } }] },
+    });
+    await tx.mediaAsset.deleteMany({
+      where: { entityId: { in: productIds } },
+    });
+    await tx.shop.delete({ where: { id: shopId } });
   }
 
   async verifyShop(shopId: string, dto: VerifyShopDto) {
@@ -350,6 +694,138 @@ export class AdminService {
         isKycVerified: dto.isKycVerified,
       },
     });
+  }
+
+  async updateShop(shopId: string, dto: UpdateShopDto, actorId: string) {
+    const shop = await this.prisma.shop.findUnique({ where: { id: shopId } });
+    if (!shop) throw new NotFoundException('Shop not found');
+
+    if (dto.categoryId) {
+      const category = await this.prisma.category.findUnique({
+        where: { id: dto.categoryId },
+      });
+      if (!category) throw new BadRequestException('Category not found');
+    }
+
+    const data: Prisma.ShopUncheckedUpdateInput = {};
+    if (dto.name !== undefined) {
+      if (!dto.name.trim())
+        throw new BadRequestException('Name cannot be empty');
+      data.name = dto.name.trim();
+    }
+    if (dto.address !== undefined) {
+      if (!dto.address.trim())
+        throw new BadRequestException('Address cannot be empty');
+      data.address = dto.address.trim();
+    }
+    if (dto.categoryId) data.categoryId = dto.categoryId;
+    for (const key of [
+      'description',
+      'city',
+      'state',
+      'pincode',
+      'phone',
+      'whatsapp',
+      'gstNumber',
+    ] as const) {
+      if (dto[key] !== undefined) data[key] = nullable(dto[key]);
+    }
+    if (dto.status !== undefined) data.status = dto.status;
+    if (dto.isKycVerified !== undefined) data.isKycVerified = dto.isKycVerified;
+    if (dto.isGstVerified !== undefined) data.isGstVerified = dto.isGstVerified;
+    if (Object.keys(data).length === 0)
+      throw new BadRequestException('Nothing to update');
+
+    const updated = await this.prisma.shop.update({
+      where: { id: shopId },
+      data,
+      include: { category: { select: { id: true, name: true } } },
+    });
+    await this.audit(
+      actorId,
+      'SHOP_UPDATE',
+      'SHOP',
+      shopId,
+      {
+        status: shop.status,
+        isKycVerified: shop.isKycVerified,
+        isGstVerified: shop.isGstVerified,
+      },
+      {
+        status: updated.status,
+        isKycVerified: updated.isKycVerified,
+        isGstVerified: updated.isGstVerified,
+      },
+    );
+    return updated;
+  }
+
+  async deleteShop(shopId: string, actorId: string) {
+    const shop = await this.prisma.shop.findUnique({ where: { id: shopId } });
+    if (!shop) throw new NotFoundException('Shop not found');
+    try {
+      await this.prisma.$transaction((tx) => this.deleteShopInTx(tx, shopId));
+    } catch (e) {
+      this.rethrowIfBlocked(
+        e,
+        'This shop has orders, reservations, negotiations, reviews or other history and cannot be deleted. Set it to Inactive or Suspended instead.',
+      );
+    }
+    await this.audit(actorId, 'SHOP_DELETE', 'SHOP', shopId, {
+      name: shop.name,
+      ownerId: shop.ownerId,
+    });
+    return { success: true };
+  }
+
+  async updateProduct(
+    productId: string,
+    dto: UpdateProductDto,
+    actorId: string,
+  ) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+
+    const data: Prisma.ProductUpdateInput = {};
+    if (dto.name !== undefined) {
+      if (!dto.name.trim())
+        throw new BadRequestException('Name cannot be empty');
+      data.name = dto.name.trim();
+    }
+    const selling = dto.sellingPrice ?? Number(product.sellingPrice);
+    const mrp = dto.mrp ?? Number(product.mrp);
+    if (selling > mrp)
+      throw new BadRequestException('Selling price cannot exceed MRP');
+    if (dto.sellingPrice !== undefined) data.sellingPrice = dto.sellingPrice;
+    if (dto.mrp !== undefined) data.mrp = dto.mrp;
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (Object.keys(data).length === 0)
+      throw new BadRequestException('Nothing to update');
+
+    const updated = await this.prisma.product.update({
+      where: { id: productId },
+      data,
+    });
+    await this.audit(actorId, 'PRODUCT_UPDATE', 'PRODUCT', productId);
+    return updated;
+  }
+
+  /** Same semantics as the shopkeeper delete: the listing is deactivated. */
+  async deleteProduct(productId: string, actorId: string) {
+    const product = await this.prisma.product.findUnique({
+      where: { id: productId },
+    });
+    if (!product) throw new NotFoundException('Product not found');
+    await this.prisma.product.update({
+      where: { id: productId },
+      data: { isActive: false },
+    });
+    await this.audit(actorId, 'PRODUCT_DELETE', 'PRODUCT', productId, {
+      name: product.name,
+    });
+    return { success: true };
   }
 
   async verifyInfluencer(influencerId: string, dto: VerifyInfluencerDto) {
@@ -420,25 +896,35 @@ export class AdminService {
     const { page, limit } = parsePagination(query);
     const skip = (page - 1) * limit;
 
+    const where: Prisma.ContentReportWhereInput = {};
+    const search = cleanSearch(query.search);
+    if (search) {
+      where.OR = [
+        { title: like(search) },
+        { reason: like(search) },
+        { shop: { name: like(search) } },
+      ];
+    }
+    const status = parseEnum(
+      query.status,
+      Object.values(ReportStatus),
+      'status',
+    );
+    if (status) where.status = status;
+    if (query.reason) where.reason = query.reason;
+
     const [reports, total] = await Promise.all([
       this.prisma.contentReport.findMany({
+        where,
         skip,
         take: limit,
         include: { product: true, shop: true, reporter: true },
         orderBy: { createdAt: 'desc' },
       }),
-      this.prisma.contentReport.count(),
+      this.prisma.contentReport.count({ where }),
     ]);
 
-    return {
-      data: reports,
-      meta: {
-        total,
-        page,
-        limit,
-        totalPages: Math.ceil(total / limit),
-      },
-    };
+    return { data: reports, meta: pageMeta(total, page, limit) };
   }
 
   async resolveReport(reportId: string, dto: ResolveReportDto) {
@@ -453,6 +939,70 @@ export class AdminService {
     });
   }
 
+  /**
+   * Takes the reported content down (product deactivated, or the shop
+   * suspended when the report targets a shop) and resolves the report.
+   */
+  async removeReportedContent(reportId: string, actorId: string) {
+    const report = await this.prisma.contentReport.findUnique({
+      where: { id: reportId },
+    });
+    if (!report) throw new NotFoundException('Report not found');
+
+    if (report.productId) {
+      await this.prisma.product.update({
+        where: { id: report.productId },
+        data: { isActive: false },
+      });
+    } else if (report.shopId) {
+      await this.prisma.shop.update({
+        where: { id: report.shopId },
+        data: { status: 'SUSPENDED' },
+      });
+    } else {
+      throw new BadRequestException('This report has no content to remove');
+    }
+
+    const updated = await this.prisma.contentReport.update({
+      where: { id: reportId },
+      data: { status: 'RESOLVED' },
+    });
+    await this.audit(
+      actorId,
+      'REPORT_REMOVE_CONTENT',
+      'REPORT',
+      reportId,
+      undefined,
+      {
+        productId: report.productId,
+        shopId: report.shopId,
+      },
+    );
+    return updated;
+  }
+
+  async bulkReports(ids: string[], action: BulkReportAction, actorId: string) {
+    const unique = [...new Set(ids)];
+    if (action === BulkReportAction.RESOLVE) {
+      const res = await this.prisma.contentReport.updateMany({
+        where: { id: { in: unique } },
+        data: { status: 'RESOLVED' },
+      });
+      return { processed: res.count, failed: unique.length - res.count };
+    }
+    let processed = 0;
+    let failed = 0;
+    for (const id of unique) {
+      try {
+        await this.removeReportedContent(id, actorId);
+        processed++;
+      } catch {
+        failed++;
+      }
+    }
+    return { processed, failed };
+  }
+
   async getUserDetail(userId: string) {
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -463,7 +1013,7 @@ export class AdminService {
       },
     });
     if (!user) throw new NotFoundException('User not found');
-    return user;
+    return { ...user, adminNote: await this.latestNote(userId) };
   }
 
   async getShopDetail(shopId: string) {
@@ -471,6 +1021,7 @@ export class AdminService {
       where: { id: shopId },
       include: {
         owner: true,
+        category: { select: { id: true, name: true } },
         products: { take: 10, orderBy: { createdAt: 'desc' } },
         orders: {
           take: 10,
@@ -484,6 +1035,17 @@ export class AdminService {
   }
 
   async getInfluencerDetail(influencerId: string) {
+    if (influencerId.startsWith('temp_')) {
+      const userId = influencerId.replace('temp_', '');
+      const user = await this.prisma.user.findUnique({ where: { id: userId } });
+      if (!user || user.role !== 'INFLUENCER')
+        throw new NotFoundException('Influencer profile not found');
+      return {
+        ...this.placeholderInfluencer(user),
+        assignments: [],
+        adminNote: await this.latestNote(userId),
+      };
+    }
     const influencer = await this.prisma.influencerProfile.findUnique({
       where: { id: influencerId },
       include: {
@@ -497,7 +1059,10 @@ export class AdminService {
     });
     if (!influencer)
       throw new NotFoundException('Influencer profile not found');
-    return influencer;
+    return {
+      ...influencer,
+      adminNote: await this.latestNote(influencer.userId),
+    };
   }
 
   async getReportStats() {
@@ -526,7 +1091,12 @@ export class AdminService {
       analyticsEvents,
     ] = await Promise.all([
       this.prisma.shop.count(),
-      this.prisma.user.count(),
+      // "Monthly active" = signed in during the last 30 days.
+      this.prisma.user.count({
+        where: {
+          lastLoginAt: { gte: new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) },
+        },
+      }),
       this.prisma.order.aggregate({
         where: { status: 'DELIVERED' },
         _sum: { total: true },
@@ -535,7 +1105,10 @@ export class AdminService {
         where: { status: { in: ['PENDING', 'COUNTERED'] } },
       }),
       this.prisma.shop.findMany({
-        where: { OR: [{ isKycVerified: false }, { isGstVerified: false }] },
+        where: {
+          status: 'ACTIVE',
+          OR: [{ isKycVerified: false }, { isGstVerified: false }],
+        },
         include: { owner: true },
         take: 5,
         orderBy: { createdAt: 'asc' },
@@ -607,6 +1180,7 @@ export class AdminService {
       activeNegotiations,
       chartData,
       verificationQueue: verificationQueue.map((shop) => ({
+        id: shop.id,
         name: shop.name,
         location: shop.city || 'India',
         type: 'Retail',
@@ -617,21 +1191,54 @@ export class AdminService {
     };
   }
 
-  async getAdminNotifications() {
-    const notifications = await this.prisma.notification.findMany({
-      take: 20,
-      orderBy: { createdAt: 'desc' },
-    });
-    return notifications;
+  /** The signed-in admin's own inbox (broadcasts and system alerts). */
+  async getAdminNotifications(
+    actorId: string,
+    query: { page?: string; limit?: string; filter?: 'all' | 'unread' } = {},
+  ) {
+    const { page, limit } = parsePagination(query);
+    const where: Prisma.NotificationWhereInput = {
+      userId: actorId,
+      ...(query.filter === 'unread' ? { isRead: false } : {}),
+    };
+    const [data, total, unreadCount] = await this.prisma.$transaction([
+      this.prisma.notification.findMany({
+        where,
+        skip: (page - 1) * limit,
+        take: limit,
+        orderBy: { createdAt: 'desc' },
+      }),
+      this.prisma.notification.count({ where }),
+      this.prisma.notification.count({
+        where: { userId: actorId, isRead: false },
+      }),
+    ]);
+    return {
+      data,
+      meta: {
+        total,
+        page,
+        limit,
+        totalPages: Math.max(1, Math.ceil(total / limit)),
+        unreadCount,
+      },
+    };
   }
 
-  async markNotificationsRead() {
-    // Only mark SYSTEM-type notifications as read (admin panel notifications)
+  async markNotificationsRead(actorId: string) {
     await this.prisma.notification.updateMany({
-      where: { type: 'SYSTEM' },
+      where: { userId: actorId, isRead: false },
       data: { isRead: true },
     });
     return { success: true };
+  }
+
+  async markNotificationRead(actorId: string, notificationId: string) {
+    const result = await this.prisma.notification.updateMany({
+      where: { id: notificationId, userId: actorId },
+      data: { isRead: true },
+    });
+    return { success: true, updated: result.count };
   }
 
   async getSettings() {

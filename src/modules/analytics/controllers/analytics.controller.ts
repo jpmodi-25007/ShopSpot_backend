@@ -3,13 +3,14 @@ import {
   Get,
   Post,
   Body,
+  Query,
   UseGuards,
   Req,
   Param,
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { AnalyticsService } from '../analytics.service';
-import { TrackEventDto } from '../dto/analytics.dto';
+import { TrackEventDto, AdminAnalyticsQueryDto } from '../dto/analytics.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -47,8 +48,8 @@ export class AnalyticsController {
   @Roles(UserRole.ADMIN)
   @Get('admin')
   @ApiOperation({ summary: 'Get platform-wide admin analytics dashboard' })
-  getAdminAnalytics() {
-    return this.analyticsService.getAdminAnalytics();
+  getAdminAnalytics(@Query() query: AdminAnalyticsQueryDto) {
+    return this.analyticsService.getAdminAnalytics(query.period);
   }
 
   @ApiBearerAuth('access-token')
