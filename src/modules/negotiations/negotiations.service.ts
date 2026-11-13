@@ -29,6 +29,28 @@ export class NegotiationsService {
     });
     if (!product || !product.isActive)
       throw new NotFoundException('Product not found');
+
+    const openOffer = await this.prisma.negotiation.findFirst({
+      where: {
+        customerId,
+        productId: dto.productId,
+        status: { in: [NegotiationStatus.PENDING, NegotiationStatus.COUNTERED] },
+      },
+      include: {
+        product: {
+          select: {
+            id: true,
+            name: true,
+            mediaAssets: true,
+            sellingPrice: true,
+          },
+        },
+        shop: { select: { id: true, name: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (openOffer) return openOffer;
+
     const neg = await this.prisma.negotiation.create({
       data: {
         productId: dto.productId,

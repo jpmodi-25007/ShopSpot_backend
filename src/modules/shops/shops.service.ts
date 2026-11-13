@@ -93,6 +93,7 @@ export class ShopsService {
         email: dto.email,
         gstNumber: dto.gstNumber,
         businessHours: dto.businessHours as any,
+        ...(dto.isOpen === undefined ? {} : { isOpen: dto.isOpen }),
       },
     });
   }

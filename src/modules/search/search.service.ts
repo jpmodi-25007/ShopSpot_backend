@@ -33,8 +33,12 @@ export class SearchService {
       }),
       this.prisma.product.findMany({
         where: {
-          name: { contains: q, mode: 'insensitive' },
           isActive: true,
+          OR: [
+            { name: { contains: q, mode: 'insensitive' } },
+            { category: { name: { contains: q, mode: 'insensitive' } } },
+            { shop: { name: { contains: q, mode: 'insensitive' } } },
+          ],
         },
         take: 10,
         select: {

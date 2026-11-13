@@ -74,7 +74,12 @@ export class OrdersService {
 
         const unitPrice = Number(product.sellingPrice);
         subtotal += unitPrice * quantity;
-        pricedItems.push({ ...item, quantity, price: unitPrice });
+        pricedItems.push({
+          productId: product.id,
+          name: product.name,
+          quantity,
+          price: unitPrice,
+        });
 
         await tx.stockHistory.create({
           data: {
@@ -131,13 +136,41 @@ export class OrdersService {
     });
     if (!shop) throw new NotFoundException('Shop not found');
 
-    return this.prisma.order.findMany({
+    const orders = await this.prisma.order.findMany({
       where: { shopId: shop.id },
       orderBy: { createdAt: 'desc' },
       include: {
         customer: { select: { name: true, email: true, mobile: true } },
       },
     });
+
+    const productIds = [
+      ...new Set(
+        orders.flatMap((order) => {
+          const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+          return items
+            .map((item) => item?.productId)
+            .filter((id): id is string => typeof id === 'string' && id.length > 0);
+        }),
+      ),
+    ];
+    const products = productIds.length
+      ? await this.prisma.product.findMany({
+          where: { id: { in: productIds } },
+          select: { id: true, name: true },
+        })
+      : [];
+    const names = new Map(products.map((product) => [product.id, product.name]));
+
+    return orders.map((order) => ({
+      ...order,
+      items: (Array.isArray(order.items) ? (order.items as any[]) : []).map(
+        (item) => ({
+          ...item,
+          name: item?.name || names.get(item?.productId) || 'Item',
+        }),
+      ),
+    }));
   }
 
   async updateOrderStatus(

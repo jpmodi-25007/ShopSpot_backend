@@ -170,6 +170,37 @@ export class ProductsService {
         variants: dto.variants as any,
         tags: dto.tags,
       },
+    }).then(async (updated) => {
+      if (dto.retainMediaUrls) {
+        await this.prisma.mediaAsset.deleteMany({
+          where: {
+            entityType: 'PRODUCT',
+            entityId: productId,
+            ...(dto.retainMediaUrls.length
+              ? { secureUrl: { notIn: dto.retainMediaUrls } }
+              : {}),
+          },
+        });
+      }
+      if (dto.mediaAssets?.length) {
+        await this.prisma.mediaAsset.createMany({
+          data: dto.mediaAssets.map((asset, index) => ({
+            publicId: asset.publicId,
+            secureUrl: asset.secureUrl,
+            width: asset.width,
+            height: asset.height,
+            format: asset.format,
+            bytes: asset.bytes,
+            resourceType: asset.resourceType || 'image',
+            folder: asset.folder,
+            entityType: 'PRODUCT',
+            entityId: productId,
+            isPrimary: false,
+            position: index,
+          })),
+        });
+      }
+      return updated;
     });
   }
 
@@ -342,6 +373,7 @@ export class ProductsService {
         where,
         include: {
           category: true,
+          mediaAssets: { orderBy: [{ isPrimary: 'desc' }, { position: 'asc' }] },
           shop: {
             select: {
               id: true,
@@ -350,6 +382,7 @@ export class ProductsService {
               city: true,
               latitude: true,
               longitude: true,
+              logoUrl: true,
             },
           },
         },
@@ -370,7 +403,16 @@ export class ProductsService {
       take: limit,
       include: {
         category: true,
-        shop: { select: { id: true, name: true, rating: true, city: true } },
+        mediaAssets: { orderBy: [{ isPrimary: 'desc' }, { position: 'asc' }] },
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            rating: true,
+            city: true,
+            logoUrl: true,
+          },
+        },
       },
     });
   }

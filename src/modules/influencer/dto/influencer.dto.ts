@@ -2,16 +2,17 @@ import {
   IsString,
   IsOptional,
   IsArray,
-  IsUrl,
   IsNumber,
   Min,
   IsDateString,
   IsEnum,
   IsDecimal,
+  IsBoolean,
   MinLength,
   MaxLength,
 } from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { Type } from 'class-transformer';
 import { BudgetType } from '@prisma/client';
 
 export class UpdateInfluencerProfileDto {
@@ -51,26 +52,31 @@ export class UpdateInfluencerProfileDto {
   categories?: string[];
 
   @ApiPropertyOptional()
-  @IsUrl()
+  @IsString()
+  @MaxLength(500)
   @IsOptional()
   instagramUrl?: string;
 
   @ApiPropertyOptional()
-  @IsUrl()
+  @IsString()
+  @MaxLength(500)
   @IsOptional()
   facebookUrl?: string;
 
   @ApiPropertyOptional()
-  @IsUrl()
+  @IsString()
+  @MaxLength(500)
   @IsOptional()
   youtubeUrl?: string;
 
   @ApiPropertyOptional()
   @IsNumber()
+  @Type(() => Number)
   @IsOptional()
   followers?: number;
 
   @ApiPropertyOptional()
+  @IsBoolean()
   @IsOptional()
   isActive?: boolean;
 }

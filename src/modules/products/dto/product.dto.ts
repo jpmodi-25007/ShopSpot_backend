@@ -60,7 +60,13 @@ export class CreateProductDto {
   @ApiPropertyOptional() @IsOptional() @IsArray() tags?: string[];
 }
 
-export class UpdateProductDto extends CreateProductDto {}
+export class UpdateProductDto extends CreateProductDto {
+  @ApiPropertyOptional({ type: [String] })
+  @IsOptional()
+  @IsArray()
+  @IsString({ each: true })
+  retainMediaUrls?: string[];
+}
 
 export class UpdateStockDto {
   @ApiProperty() @IsNumber() @Min(0) @Type(() => Number) quantity: number;

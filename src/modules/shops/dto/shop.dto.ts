@@ -1,5 +1,6 @@
 import {
   IsString,
+  IsBoolean,
   IsOptional,
   IsEmail,
   IsNumber,
@@ -104,6 +105,11 @@ export class CreateShopDto {
     string,
     { open: string; close: string; closed: boolean }
   >;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isOpen?: boolean;
 }
 
 export class UpdateShopDto extends PartialType(CreateShopDto) {}

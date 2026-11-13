@@ -74,6 +74,7 @@ export class InfluencerService {
         OR: [
           { targetCategories: { has: industry } },
           { shop: { category: { name: industry } } },
+          { product: { category: { name: industry } } },
         ],
       });
     }
@@ -218,6 +219,7 @@ export class InfluencerService {
             product: { include: { mediaAssets: true } },
           },
         },
+        counterOffers: { orderBy: { createdAt: 'desc' }, take: 1 },
       },
       orderBy: { createdAt: 'desc' },
     });
@@ -355,7 +357,7 @@ export class InfluencerService {
     if (!campaign) throw new NotFoundException('Campaign not found');
 
     return this.prisma.influencerBid.findMany({
-      where: { campaignId },
+      where: { campaignId, status: { not: BidStatus.WITHDRAWN } },
       include: {
         influencer: { include: { user: { select: { avatarUrl: true } } } },
       },
