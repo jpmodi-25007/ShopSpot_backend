@@ -30,6 +30,7 @@ import { RetailerInventoryModule } from './modules/retailer-inventory/retailer-i
 import { PromotionsModule } from './promotions/promotions.module';
 import { EventsModule } from './events/events.module';
 import { ChatsModule } from './modules/chats/chats.module';
+import { PaymentsModule } from './modules/payments/payments.module';
 
 @Module({
   imports: [
@@ -93,6 +94,7 @@ import { ChatsModule } from './modules/chats/chats.module';
     PromotionsModule,
     EventsModule,
     ChatsModule,
+    PaymentsModule,
   ],
   providers: [
     // Global safety net: password hashes / reset data never leave the API.

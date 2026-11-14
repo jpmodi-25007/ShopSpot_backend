@@ -27,6 +27,28 @@ export class ProductsService {
   async createProduct(ownerId: string, dto: CreateProductDto) {
     const shop = await this.getOrCreateShop(ownerId);
 
+    // Enforce subscription plan product limit
+    const plan = await this.prisma.subscriptionPlan.findUnique({
+      where: { tier: shop.subscriptionTier },
+    });
+    const productLimit = plan
+      ? plan.productLimit
+      : shop.subscriptionTier === 'PREMIUM'
+        ? 500
+        : shop.subscriptionTier === 'PRO'
+          ? 200
+          : 50;
+    const planName = plan ? plan.name : shop.subscriptionTier;
+
+    const currentProductCount = await this.prisma.product.count({
+      where: { shopId: shop.id },
+    });
+    if (currentProductCount >= productLimit) {
+      throw new ForbiddenException(
+        `Product limit reached. Your ${planName} plan allows up to ${productLimit} products. Please upgrade your subscription to add more.`,
+      );
+    }
+
     if (
       dto.mrp !== undefined &&
       dto.mrp !== null &&
@@ -152,56 +174,58 @@ export class ProductsService {
       dto.lowStockThreshold ?? existingProduct.lowStockThreshold,
     );
 
-    return this.prisma.product.update({
-      where: { id: productId },
-      data: {
-        name: dto.name?.trim(),
-        description: dto.description,
-        categoryId: dto.categoryId,
-        brand: dto.brand,
-        mrp: dto.mrp,
-        sellingPrice: dto.sellingPrice,
-        stockQuantity: dto.stockQuantity,
-        stockStatus,
-        lowStockThreshold: dto.lowStockThreshold,
-        sku: dto.sku,
-        barcode: dto.barcode,
-        attributes: dto.attributes as any,
-        variants: dto.variants as any,
-        tags: dto.tags,
-      },
-    }).then(async (updated) => {
-      if (dto.retainMediaUrls) {
-        await this.prisma.mediaAsset.deleteMany({
-          where: {
-            entityType: 'PRODUCT',
-            entityId: productId,
-            ...(dto.retainMediaUrls.length
-              ? { secureUrl: { notIn: dto.retainMediaUrls } }
-              : {}),
-          },
-        });
-      }
-      if (dto.mediaAssets?.length) {
-        await this.prisma.mediaAsset.createMany({
-          data: dto.mediaAssets.map((asset, index) => ({
-            publicId: asset.publicId,
-            secureUrl: asset.secureUrl,
-            width: asset.width,
-            height: asset.height,
-            format: asset.format,
-            bytes: asset.bytes,
-            resourceType: asset.resourceType || 'image',
-            folder: asset.folder,
-            entityType: 'PRODUCT',
-            entityId: productId,
-            isPrimary: false,
-            position: index,
-          })),
-        });
-      }
-      return updated;
-    });
+    return this.prisma.product
+      .update({
+        where: { id: productId },
+        data: {
+          name: dto.name?.trim(),
+          description: dto.description,
+          categoryId: dto.categoryId,
+          brand: dto.brand,
+          mrp: dto.mrp,
+          sellingPrice: dto.sellingPrice,
+          stockQuantity: dto.stockQuantity,
+          stockStatus,
+          lowStockThreshold: dto.lowStockThreshold,
+          sku: dto.sku,
+          barcode: dto.barcode,
+          attributes: dto.attributes as any,
+          variants: dto.variants as any,
+          tags: dto.tags,
+        },
+      })
+      .then(async (updated) => {
+        if (dto.retainMediaUrls) {
+          await this.prisma.mediaAsset.deleteMany({
+            where: {
+              entityType: 'PRODUCT',
+              entityId: productId,
+              ...(dto.retainMediaUrls.length
+                ? { secureUrl: { notIn: dto.retainMediaUrls } }
+                : {}),
+            },
+          });
+        }
+        if (dto.mediaAssets?.length) {
+          await this.prisma.mediaAsset.createMany({
+            data: dto.mediaAssets.map((asset, index) => ({
+              publicId: asset.publicId,
+              secureUrl: asset.secureUrl,
+              width: asset.width,
+              height: asset.height,
+              format: asset.format,
+              bytes: asset.bytes,
+              resourceType: asset.resourceType || 'image',
+              folder: asset.folder,
+              entityType: 'PRODUCT',
+              entityId: productId,
+              isPrimary: false,
+              position: index,
+            })),
+          });
+        }
+        return updated;
+      });
   }
 
   async deleteProduct(ownerId: string, productId: string) {
@@ -373,7 +397,9 @@ export class ProductsService {
         where,
         include: {
           category: true,
-          mediaAssets: { orderBy: [{ isPrimary: 'desc' }, { position: 'asc' }] },
+          mediaAssets: {
+            orderBy: [{ isPrimary: 'desc' }, { position: 'asc' }],
+          },
           shop: {
             select: {
               id: true,

@@ -77,12 +77,40 @@ export class EventsService {
         where: { ownerId: actor.id },
       });
       if (!shop) throw new NotFoundException('Shop not found');
+
+      // Enforce subscription plan event limit for shopkeeper
+      const plan = await this.prisma.subscriptionPlan.findUnique({
+        where: { tier: shop.subscriptionTier },
+      });
+      const eventLimit = plan
+        ? plan.eventLimit
+        : shop.subscriptionTier === 'PREMIUM'
+          ? 3
+          : shop.subscriptionTier === 'PRO'
+            ? 1
+            : 0;
+      const planName = plan ? plan.name : shop.subscriptionTier;
+
+      if ((shop.eventsUsedThisMonth ?? 0) >= eventLimit) {
+        throw new ForbiddenException(
+          `Monthly event limit reached. Your ${planName} plan allows ${eventLimit} event(s) per month on the home screen. Please upgrade your subscription.`,
+        );
+      }
       shopId = shop.id;
     }
 
     const event = await this.prisma.event.create({
       data: { ...(fields as any), shopId },
     });
+
+    if (shopId) {
+      // Increment event usage count for this month after successful creation
+      await this.prisma.shop.update({
+        where: { id: shopId },
+        data: { eventsUsedThisMonth: { increment: 1 } },
+      });
+    }
+
     return event;
   }
 

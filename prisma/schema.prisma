@@ -122,6 +122,8 @@ model Shop {
   reviewCount           Int                  @default(0)
   subscriptionTier      SubscriptionTier     @default(FREE)
   subscriptionExpiresAt DateTime?
+  eventsUsedThisMonth   Int                  @default(0)
+  eventsResetAt         DateTime?
   status                ShopStatus           @default(ACTIVE)
   isOpen                Boolean              @default(true)
   createdAt             DateTime             @default(now())
@@ -143,6 +145,7 @@ model Shop {
   owner                 User                 @relation(fields: [ownerId], references: [id])
   subscriptions         Subscription[]
   suppliers             Supplier[]
+  razorpayOrders        RazorpayOrder[]
 
   @@index([categoryId])
   @@index([status])
@@ -434,24 +437,63 @@ model Address {
 }
 
 model Subscription {
-  id             String           @id @default(uuid())
+  id             String            @id @default(uuid())
   shopId         String
   planName       String
   planTier       SubscriptionTier
-  price          Decimal          @db.Decimal(10, 2)
-  billingCycle   String           @default("monthly")
+  price          Decimal           @db.Decimal(10, 2)
+  billingCycle   String            @default("monthly")
   features       Json
   productLimit   Int?
   analyticsLevel String?
-  adCredits      Int              @default(0)
+  adCredits      Int               @default(0)
   razorpaySubId  String?
   startedAt      DateTime?
   expiresAt      DateTime?
-  isActive       Boolean          @default(true)
-  createdAt      DateTime         @default(now())
-  shop           Shop             @relation(fields: [shopId], references: [id])
+  isActive       Boolean           @default(true)
+  createdAt      DateTime          @default(now())
+  planId         String?
+  plan           SubscriptionPlan? @relation(fields: [planId], references: [id])
+  shop           Shop              @relation(fields: [shopId], references: [id])
 
   @@map("subscriptions")
+}
+
+model SubscriptionPlan {
+  id            String           @id @default(uuid())
+  tier          SubscriptionTier @unique
+  name          String
+  tagline       String
+  price         Decimal          @db.Decimal(10, 2)
+  yearlyPrice   Decimal?         @db.Decimal(10, 2)
+  productLimit  Int
+  eventLimit    Int              @default(0)
+  features      Json
+  isActive      Boolean          @default(true)
+  isHighlighted Boolean          @default(false)
+  sortOrder     Int              @default(0)
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+  subscriptions Subscription[]
+
+  @@map("subscription_plans")
+}
+
+model RazorpayOrder {
+  id              String   @id @default(uuid())
+  shopId          String
+  planId          String
+  razorpayOrderId String   @unique
+  amount          Decimal  @db.Decimal(10, 2)
+  currency        String   @default("INR")
+  status          String   @default("created")
+  paymentId       String?
+  signature       String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  shop            Shop     @relation(fields: [shopId], references: [id])
+
+  @@map("razorpay_orders")
 }
 
 model AnalyticsEvent {
@@ -817,9 +859,8 @@ enum ShopStatus {
 
 enum SubscriptionTier {
   FREE
-  BASIC
+  PRO
   PREMIUM
-  ELITE
 }
 
 enum StockStatus {

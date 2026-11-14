@@ -29,6 +29,8 @@ import {
   AdminNoteDto,
   BulkReportDto,
   AdminNotificationsQueryDto,
+  UpdateSubscriptionPlanDto,
+  OverrideShopPlanDto,
 } from '../dto/admin.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
@@ -268,5 +270,51 @@ export class AdminController {
   @ApiOperation({ summary: 'Update platform settings' })
   updateSettings(@Body() dto: any) {
     return this.adminService.updateSettings(dto);
+  }
+
+  // ─── SUBSCRIPTION MANAGEMENT ─────────────────────────────────────────────
+
+  @Get('subscription-plans')
+  @ApiOperation({ summary: 'Admin: list all subscription plans' })
+  getSubscriptionPlans() {
+    return this.adminService.getSubscriptionPlans();
+  }
+
+  @Post('subscription-plans/seed')
+  @ApiOperation({ summary: 'Admin: seed or reset default subscription plans' })
+  seedSubscriptionPlans() {
+    return this.adminService.seedDefaultPlans();
+  }
+
+  @Patch('subscription-plans/:id')
+  @ApiOperation({ summary: 'Admin: update a subscription plan' })
+  updateSubscriptionPlan(
+    @Param('id') id: string,
+    @Body() dto: UpdateSubscriptionPlanDto,
+  ) {
+    return this.adminService.updateSubscriptionPlan(id, dto);
+  }
+
+  @Get('subscriptions')
+  @ApiOperation({
+    summary: 'List all subscriptions, optionally filtered by tier',
+  })
+  getAllSubscriptions(@Query('tier') tier?: string) {
+    return this.adminService.getAllSubscriptions(tier);
+  }
+
+  @Get('payments/stats')
+  @ApiOperation({ summary: 'Get payment & MRR statistics' })
+  getPaymentStats() {
+    return this.adminService.getPaymentStats();
+  }
+
+  @Post('shops/:id/override-plan')
+  @ApiOperation({ summary: 'Admin: override a shop subscription plan' })
+  overrideShopPlan(
+    @Param('id') shopId: string,
+    @Body() dto: OverrideShopPlanDto,
+  ) {
+    return this.adminService.overrideShopPlan(shopId, dto.tier);
   }
 }
