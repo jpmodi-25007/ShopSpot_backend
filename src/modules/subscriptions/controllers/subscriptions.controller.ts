@@ -1,4 +1,12 @@
-import { Controller, Get, Post, Body, UseGuards } from '@nestjs/common';
+import {
+  Controller,
+  Get,
+  Post,
+  Patch,
+  Body,
+  UseGuards,
+  Param,
+} from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { SubscriptionsService } from '../subscriptions.service';
 import { SubscribeDto } from '../dto/subscriptions.dto';
@@ -19,6 +27,15 @@ export class SubscriptionsController {
   @ApiOperation({ summary: 'List all subscription plans' })
   getPlans() {
     return this.subscriptionsService.getPlans();
+  }
+
+  @ApiBearerAuth('access-token')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles(UserRole.ADMIN)
+  @Patch('plans/:id')
+  @ApiOperation({ summary: 'Admin: update a subscription plan' })
+  updatePlan(@Param('id') id: string, @Body() body: any) {
+    return this.subscriptionsService.updatePlan(id, body);
   }
 
   @ApiBearerAuth('access-token')

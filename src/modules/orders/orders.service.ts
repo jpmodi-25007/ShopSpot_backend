@@ -147,10 +147,14 @@ export class OrdersService {
     const productIds = [
       ...new Set(
         orders.flatMap((order) => {
-          const items = Array.isArray(order.items) ? (order.items as any[]) : [];
+          const items = Array.isArray(order.items)
+            ? (order.items as any[])
+            : [];
           return items
             .map((item) => item?.productId)
-            .filter((id): id is string => typeof id === 'string' && id.length > 0);
+            .filter(
+              (id): id is string => typeof id === 'string' && id.length > 0,
+            );
         }),
       ),
     ];
@@ -160,7 +164,9 @@ export class OrdersService {
           select: { id: true, name: true },
         })
       : [];
-    const names = new Map(products.map((product) => [product.id, product.name]));
+    const names = new Map(
+      products.map((product) => [product.id, product.name]),
+    );
 
     return orders.map((order) => ({
       ...order,

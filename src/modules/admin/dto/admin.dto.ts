@@ -432,3 +432,60 @@ export class AdminNotificationsQueryDto {
   @IsIn(['all', 'unread'])
   filter?: 'all' | 'unread';
 }
+
+export class UpdateSubscriptionPlanDto {
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  name?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  tagline?: string;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  price?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  yearlyPrice?: number | null;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  productLimit?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  eventLimit?: number;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsArray()
+  features?: string[];
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isHighlighted?: boolean;
+
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsBoolean()
+  isActive?: boolean;
+}
+
+export class OverrideShopPlanDto {
+  @ApiProperty({ enum: ['FREE', 'PRO', 'PREMIUM'] })
+  @IsString()
+  tier: string;
+}

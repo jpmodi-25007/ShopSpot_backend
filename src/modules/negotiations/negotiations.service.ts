@@ -34,7 +34,9 @@ export class NegotiationsService {
       where: {
         customerId,
         productId: dto.productId,
-        status: { in: [NegotiationStatus.PENDING, NegotiationStatus.COUNTERED] },
+        status: {
+          in: [NegotiationStatus.PENDING, NegotiationStatus.COUNTERED],
+        },
       },
       include: {
         product: {

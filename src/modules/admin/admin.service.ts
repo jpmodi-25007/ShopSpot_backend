@@ -4,7 +4,13 @@ import {
   ConflictException,
   BadRequestException,
 } from '@nestjs/common';
-import { Prisma, ReportStatus, ShopStatus, UserRole } from '@prisma/client';
+import {
+  Prisma,
+  ReportStatus,
+  ShopStatus,
+  UserRole,
+  SubscriptionTier,
+} from '@prisma/client';
 import { PrismaService } from '../../prisma/prisma.service';
 import {
   VerifyShopDto,
@@ -1287,5 +1293,245 @@ export class AdminService {
       console.error('Failed to save settings', e);
       throw new Error('Failed to save settings');
     }
+  }
+
+  // ─── SUBSCRIPTION MANAGEMENT ─────────────────────────────────────────────
+
+  async seedDefaultPlans() {
+    const defaultPlans = [
+      {
+        tier: SubscriptionTier.FREE,
+        name: 'Free',
+        tagline: 'Get your shop online in minutes — zero cost, zero risk',
+        price: 0,
+        yearlyPrice: null,
+        productLimit: 50,
+        eventLimit: 0,
+        features: [
+          'Up to 50 products',
+          'Basic shop profile',
+          'WhatsApp & call inquiries',
+          'Order & reservation management',
+          'Basic analytics',
+          'Standard search listing',
+        ],
+        isActive: true,
+        isHighlighted: false,
+        sortOrder: 0,
+      },
+      {
+        tier: SubscriptionTier.PRO,
+        name: 'Pro',
+        tagline: 'Grow your reach — promote events, attract more customers',
+        price: 499,
+        yearlyPrice: 4788,
+        productLimit: 200,
+        eventLimit: 1,
+        features: [
+          'Up to 200 products',
+          '1 promoted event/month on home screen',
+          'Advanced analytics',
+          '🔵 Pro badge on shop listing',
+          '20% higher search ranking',
+          'Customer chat enabled',
+          'Promotional banner in nearby feed',
+          'Auto GST invoice',
+        ],
+        isActive: true,
+        isHighlighted: true,
+        sortOrder: 1,
+      },
+      {
+        tier: SubscriptionTier.PREMIUM,
+        name: 'Premium',
+        tagline: 'Dominate your locality — maximum visibility, maximum sales',
+        price: 1199,
+        yearlyPrice: 11508,
+        productLimit: 500,
+        eventLimit: 3,
+        features: [
+          'Up to 500 products',
+          'Up to 3 events/promotions on home carousel',
+          'Full analytics suite',
+          '👑 Premium gold badge',
+          '50% search boost + category top-3',
+          'Influencer campaigns (2/month)',
+          'Full-width home screen banner',
+          'Price negotiation feature',
+          'Bulk CSV inventory upload',
+          'Stock alerts',
+          'Auto GST invoice',
+          'Early access to new features',
+        ],
+        isActive: true,
+        isHighlighted: false,
+        sortOrder: 2,
+      },
+    ];
+
+    for (const plan of defaultPlans) {
+      await this.prisma.subscriptionPlan.upsert({
+        where: { tier: plan.tier },
+        update: plan as any,
+        create: plan as any,
+      });
+    }
+
+    return {
+      success: true,
+      message: 'Default subscription plans initialized successfully',
+    };
+  }
+
+  async getSubscriptionPlans() {
+    let plans = await this.prisma.subscriptionPlan.findMany({
+      orderBy: { sortOrder: 'asc' },
+    });
+    if (plans.length === 0) {
+      await this.seedDefaultPlans();
+      plans = await this.prisma.subscriptionPlan.findMany({
+        orderBy: { sortOrder: 'asc' },
+      });
+    }
+    return plans;
+  }
+
+  async updateSubscriptionPlan(
+    planId: string,
+    data: {
+      name?: string;
+      tagline?: string;
+      price?: number;
+      yearlyPrice?: number | null;
+      productLimit?: number;
+      eventLimit?: number;
+      features?: string[];
+      isHighlighted?: boolean;
+      isActive?: boolean;
+    },
+  ) {
+    if (data.isHighlighted) {
+      await this.prisma.subscriptionPlan.updateMany({
+        where: { isHighlighted: true },
+        data: { isHighlighted: false },
+      });
+    }
+    return this.prisma.subscriptionPlan.update({
+      where: { id: planId },
+      data,
+    });
+  }
+
+  async getAllSubscriptions(tier?: string) {
+    const where: Prisma.SubscriptionWhereInput = {};
+    if (tier && tier !== 'ALL') {
+      where.planTier = tier as SubscriptionTier;
+    }
+    return this.prisma.subscription.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      take: 100,
+      include: {
+        shop: {
+          select: {
+            id: true,
+            name: true,
+            _count: { select: { products: true } },
+          },
+        },
+        plan: { select: { name: true } },
+      },
+    });
+  }
+
+  async getPaymentStats() {
+    const [
+      proCount,
+      premiumCount,
+      freeCount,
+      totalRevenue,
+      recentPayments,
+      allPlans,
+    ] = await Promise.all([
+      this.prisma.shop.count({ where: { subscriptionTier: 'PRO' } }),
+      this.prisma.shop.count({ where: { subscriptionTier: 'PREMIUM' } }),
+      this.prisma.shop.count({ where: { subscriptionTier: 'FREE' } }),
+      this.prisma.razorpayOrder.aggregate({
+        where: { status: 'paid' },
+        _sum: { amount: true },
+      }),
+      this.prisma.razorpayOrder.findMany({
+        where: { status: 'paid' },
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        include: { shop: { select: { name: true } } },
+      }),
+      this.prisma.subscriptionPlan.findMany(),
+    ]);
+
+    const proPlans = allPlans.find((p) => p.tier === 'PRO');
+    const premiumPlans = allPlans.find((p) => p.tier === 'PREMIUM');
+    const planMap = new Map(allPlans.map((pl) => [pl.id, pl.name]));
+
+    const mrr =
+      proCount * Number(proPlans?.price || 499) +
+      premiumCount * Number(premiumPlans?.price || 1199);
+
+    return {
+      mrr,
+      totalRevenue: Number(totalRevenue._sum.amount || 0),
+      activePaid: proCount + premiumCount,
+      freeCount,
+      tierCounts: { FREE: freeCount, PRO: proCount, PREMIUM: premiumCount },
+      recentPayments: recentPayments.map((p) => ({
+        shop: p.shop,
+        planId: p.planId,
+        planName: planMap.get(p.planId) || 'Subscription',
+        amount: p.amount,
+        status: p.status,
+        createdAt: p.createdAt,
+      })),
+    };
+  }
+
+  async overrideShopPlan(shopId: string, tier: string) {
+    const planTier = tier.toUpperCase() as SubscriptionTier;
+    const plan = await this.prisma.subscriptionPlan.findFirst({
+      where: { tier: planTier },
+    });
+    if (!plan) throw new NotFoundException('Plan not found');
+
+    const expiresAt = new Date();
+    expiresAt.setMonth(expiresAt.getMonth() + 1);
+
+    await this.prisma.shop.update({
+      where: { id: shopId },
+      data: {
+        subscriptionTier: planTier,
+        subscriptionExpiresAt: expiresAt,
+        eventsUsedThisMonth: 0,
+      },
+    });
+
+    await this.prisma.subscription.updateMany({
+      where: { shopId, isActive: true },
+      data: { isActive: false },
+    });
+
+    return this.prisma.subscription.create({
+      data: {
+        shopId,
+        planId: plan.id,
+        planName: plan.name,
+        planTier: planTier,
+        price: plan.price,
+        billingCycle: 'monthly',
+        features: (plan.features as Prisma.InputJsonValue) ?? [],
+        productLimit: plan.productLimit,
+        startedAt: new Date(),
+        expiresAt,
+        isActive: true,
+      },
+    });
   }
 }
