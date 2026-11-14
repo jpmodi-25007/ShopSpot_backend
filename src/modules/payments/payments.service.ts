@@ -46,6 +46,29 @@ export class PaymentsService {
       return { free: true, subscription };
     }
 
+    // Check if Razorpay keys are configured
+    if (!this.razorpayKeyId || !this.razorpayKeySecret) {
+      if (
+        process.env.ALLOW_SIMULATED_SUBSCRIPTIONS === 'true' ||
+        process.env.NODE_ENV !== 'production'
+      ) {
+        const subscription = await this.subscriptionsService.activateSubscription(
+          shop.id,
+          plan.id,
+          `sim_${Date.now()}`,
+        );
+        return {
+          free: false,
+          simulated: true,
+          subscription,
+          message: 'Plan activated in test mode (Razorpay keys not configured).',
+        };
+      }
+      throw new BadRequestException(
+        'Razorpay API credentials (RAZORPAY_KEY_ID & RAZORPAY_KEY_SECRET) are missing in Render Environment Variables. Please set them in the Render Dashboard.',
+      );
+    }
+
     // Create Razorpay order via REST API
     const amountPaise = Math.round(Number(plan.price) * 100);
     const orderPayload = {
@@ -73,6 +96,32 @@ export class PaymentsService {
 
     if (!response.ok) {
       const err = await response.text();
+      let parsedErr: any = null;
+      try {
+        parsedErr = JSON.parse(err);
+      } catch (_) {}
+
+      if (parsedErr?.error?.description === 'Authentication failed') {
+        if (
+          process.env.ALLOW_SIMULATED_SUBSCRIPTIONS === 'true' ||
+          process.env.NODE_ENV !== 'production'
+        ) {
+          const subscription = await this.subscriptionsService.activateSubscription(
+            shop.id,
+            plan.id,
+            `sim_${Date.now()}`,
+          );
+          return {
+            free: false,
+            simulated: true,
+            subscription,
+            message: 'Plan activated in test mode (Razorpay authentication failed).',
+          };
+        }
+        throw new BadRequestException(
+          'Razorpay Authentication Failed: The RAZORPAY_KEY_ID or RAZORPAY_KEY_SECRET in your Render Environment Variables is invalid. Please verify your Razorpay API Keys.',
+        );
+      }
       throw new InternalServerErrorException(`Razorpay error: ${err}`);
     }
 
