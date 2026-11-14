@@ -859,8 +859,10 @@ enum ShopStatus {
 
 enum SubscriptionTier {
   FREE
+  BASIC
   PRO
   PREMIUM
+  ELITE
 }
 
 enum StockStatus {
