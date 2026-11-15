@@ -40,6 +40,8 @@ export class AnalyticsService {
       totalInquiries,
       ratingData,
       reviewCount,
+      recentViews,
+      recentOrders,
     ] = await Promise.all([
       this.prisma.analyticsEvent.count({
         where: {
