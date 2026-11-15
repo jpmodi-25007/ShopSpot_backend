@@ -488,4 +488,24 @@ export class OverrideShopPlanDto {
   @ApiProperty({ enum: ['FREE', 'PRO', 'PREMIUM'] })
   @IsString()
   tier: string;
+
+  /**
+   * How many months to grant this plan. Defaults to 1.
+   * Set to 0 to make the plan never expire (pilot / lifetime grant).
+   */
+  @ApiPropertyOptional({
+    description:
+      'Duration in months (1–24). Pass 0 for a never-expiring grant.',
+  })
+  @IsOptional()
+  @IsNumber()
+  @Min(0)
+  durationMonths?: number;
+
+  /** Internal admin note stored in the audit log. */
+  @ApiPropertyOptional()
+  @IsOptional()
+  @IsString()
+  @MaxLength(500)
+  note?: string;
 }

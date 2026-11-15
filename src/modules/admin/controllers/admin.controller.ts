@@ -314,7 +314,8 @@ export class AdminController {
   overrideShopPlan(
     @Param('id') shopId: string,
     @Body() dto: OverrideShopPlanDto,
+    @CurrentUser('id') actorId: string,
   ) {
-    return this.adminService.overrideShopPlan(shopId, dto.tier);
+    return this.adminService.overrideShopPlan(shopId, dto, actorId);
   }
 }

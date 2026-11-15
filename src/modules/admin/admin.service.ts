@@ -1037,7 +1037,52 @@ export class AdminService {
       },
     });
     if (!shop) throw new NotFoundException('Shop not found');
-    return shop;
+
+    // Fetch active subscription separately (not on Shop model directly)
+    const activeSubscription = await this.prisma.subscription.findFirst({
+      where: { shopId, isActive: true },
+      orderBy: { startedAt: 'desc' },
+      include: { plan: { select: { name: true, productLimit: true, eventLimit: true, price: true } } },
+    });
+
+    // Product usage count
+    const productCount = await this.prisma.product.count({
+      where: { shopId, isActive: true },
+    });
+
+    return {
+      ...shop,
+      subscription: activeSubscription
+        ? {
+            id: activeSubscription.id,
+            tier: activeSubscription.planTier,
+            planName: activeSubscription.planName,
+            price: activeSubscription.price,
+            productLimit: activeSubscription.productLimit ?? activeSubscription.plan?.productLimit ?? 50,
+            eventLimit: activeSubscription.plan?.eventLimit ?? 0,
+            startedAt: activeSubscription.startedAt,
+            expiresAt: activeSubscription.expiresAt,
+            isActive: activeSubscription.isActive,
+            billingCycle: activeSubscription.billingCycle,
+          }
+        : {
+            tier: shop.subscriptionTier ?? 'FREE',
+            planName: 'Free',
+            price: 0,
+            productLimit: 50,
+            eventLimit: 0,
+            startedAt: null,
+            expiresAt: shop.subscriptionExpiresAt ?? null,
+            isActive: true,
+            billingCycle: null,
+          },
+      usage: {
+        productsActive: productCount,
+        productLimit: activeSubscription?.productLimit ?? 50,
+        eventsUsedThisMonth: shop.eventsUsedThisMonth ?? 0,
+        eventLimit: activeSubscription?.plan?.eventLimit ?? 0,
+      },
+    };
   }
 
   async getInfluencerDetail(influencerId: string) {
@@ -1494,15 +1539,31 @@ export class AdminService {
     };
   }
 
-  async overrideShopPlan(shopId: string, tier: string) {
-    const planTier = tier.toUpperCase() as SubscriptionTier;
+  async overrideShopPlan(
+    shopId: string,
+    dto: { tier: string; durationMonths?: number; note?: string },
+    actorId?: string,
+  ) {
+    const planTier = dto.tier.toUpperCase() as SubscriptionTier;
     const plan = await this.prisma.subscriptionPlan.findFirst({
       where: { tier: planTier },
     });
     if (!plan) throw new NotFoundException('Plan not found');
 
-    const expiresAt = new Date();
-    expiresAt.setMonth(expiresAt.getMonth() + 1);
+    // durationMonths = 0 means lifetime / never-expires grant
+    const months =
+      typeof dto.durationMonths === 'number' && dto.durationMonths >= 0
+        ? dto.durationMonths
+        : 1;
+
+    let expiresAt: Date | null = null;
+    if (months > 0) {
+      expiresAt = new Date();
+      expiresAt.setMonth(expiresAt.getMonth() + months);
+    }
+
+    const shop = await this.prisma.shop.findUnique({ where: { id: shopId } });
+    if (!shop) throw new NotFoundException('Shop not found');
 
     await this.prisma.shop.update({
       where: { id: shopId },
@@ -1518,7 +1579,7 @@ export class AdminService {
       data: { isActive: false },
     });
 
-    return this.prisma.subscription.create({
+    const subscription = await this.prisma.subscription.create({
       data: {
         shopId,
         planId: plan.id,
@@ -1533,5 +1594,59 @@ export class AdminService {
         isActive: true,
       },
     });
+
+    // Best-effort notification to the shopkeeper
+    try {
+      const durationLabel =
+        months === 0
+          ? 'lifetime'
+          : months === 1
+            ? '1 month'
+            : `${months} months`;
+      await this.prisma.notification.create({
+        data: {
+          userId: shop.ownerId,
+          type: 'SYSTEM',
+          title: `Your plan has been updated to ${plan.name}!`,
+          body:
+            dto.note ||
+            `Admin has granted you the ${plan.name} plan for ${durationLabel}. Your new limits are live immediately.`,
+          data: {
+            planTier,
+            planName: plan.name,
+            durationMonths: months,
+            expiresAt: expiresAt?.toISOString() ?? null,
+          },
+        },
+      });
+    } catch {
+      // Non-blocking
+    }
+
+    await this.audit(
+      actorId,
+      'PLAN_OVERRIDE',
+      'SHOP',
+      shopId,
+      { tier: shop.subscriptionTier, expiresAt: shop.subscriptionExpiresAt },
+      {
+        tier: planTier,
+        durationMonths: months,
+        expiresAt: expiresAt?.toISOString() ?? null,
+        note: dto.note,
+      },
+    );
+
+    return {
+      success: true,
+      subscription,
+      tier: planTier,
+      expiresAt,
+      durationMonths: months,
+      message:
+        months === 0
+          ? `${plan.name} plan granted with no expiry.`
+          : `${plan.name} plan granted for ${months} month(s).`,
+    };
   }
 }
