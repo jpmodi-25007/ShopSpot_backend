@@ -79,6 +79,22 @@ export class AnalyticsService {
         _avg: { rating: true },
       }),
       this.prisma.review.count({ where: { shopId: shop.id } }),
+      // 7-day event timestamps for chart breakdown
+      this.prisma.analyticsEvent.findMany({
+        where: {
+          shopId: shop.id,
+          eventType: 'shop_view',
+          createdAt: { gte: sevenDaysAgo },
+        },
+        select: { createdAt: true },
+      }),
+      this.prisma.order.findMany({
+        where: {
+          shopId: shop.id,
+          createdAt: { gte: sevenDaysAgo },
+        },
+        select: { createdAt: true },
+      }),
     ]);
 
     // Calculate trend percentages
@@ -94,12 +110,43 @@ export class AnalyticsService {
       ? Math.round(ratingData._avg.rating * 10) / 10
       : 0;
 
+    // Daily breakdown for the last 7 days (index 0 = 6 days ago, index 6 = today)
+    const dailyViews = Array(7).fill(0);
+    const dailyOrders = Array(7).fill(0);
+    const dayLabels: string[] = [];
+
+    const startOfToday = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(startOfToday.getTime() - i * 24 * 60 * 60 * 1000);
+      dayLabels.push(d.toLocaleDateString('en-US', { weekday: 'short' }));
+    }
+
+    recentViews.forEach((ev) => {
+      const diffDays = Math.floor((startOfToday.getTime() + 24 * 60 * 60 * 1000 - 1 - ev.createdAt.getTime()) / (24 * 60 * 60 * 1000));
+      const idx = 6 - diffDays;
+      if (idx >= 0 && idx < 7) {
+        dailyViews[idx]++;
+      }
+    });
+
+    recentOrders.forEach((ord) => {
+      const diffDays = Math.floor((startOfToday.getTime() + 24 * 60 * 60 * 1000 - 1 - ord.createdAt.getTime()) / (24 * 60 * 60 * 1000));
+      const idx = 6 - diffDays;
+      if (idx >= 0 && idx < 7) {
+        dailyOrders[idx]++;
+      }
+    });
+
     return {
       totalViews,
       activeOrders,
       totalRevenue: totalRevenueData._sum.total || 0,
       viewsTrend,
       ordersTrend,
+      dailyViews,
+      dailyOrders,
+      dayLabels,
       // Profile stats
       totalProducts,
       totalInquiries,
