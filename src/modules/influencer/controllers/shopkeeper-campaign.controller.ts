@@ -11,7 +11,7 @@ import {
 import { ApiTags, ApiBearerAuth, ApiOperation } from '@nestjs/swagger';
 import { IsNumber, IsOptional, IsString, Min } from 'class-validator';
 import { InfluencerService } from '../influencer.service';
-import { CreateCampaignDto } from '../dto/influencer.dto';
+import { CreateCampaignDto, UpdateCampaignDto } from '../dto/influencer.dto';
 import { JwtAuthGuard } from '../../../common/guards/jwt-auth.guard';
 import { RolesGuard } from '../../../common/guards/roles.guard';
 import { Roles } from '../../../common/decorators/roles.decorator';
@@ -86,7 +86,7 @@ export class ShopkeeperCampaignController {
   updateCampaign(
     @CurrentUser('id') userId: string,
     @Param('id') campaignId: string,
-    @Body() dto: Partial<CreateCampaignDto>,
+    @Body() dto: UpdateCampaignDto,
   ) {
     return this.influencerService.updateCampaign(userId, campaignId, dto);
   }

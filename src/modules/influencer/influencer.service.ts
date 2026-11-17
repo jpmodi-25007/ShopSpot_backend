@@ -8,6 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 import {
   UpdateInfluencerProfileDto,
   CreateCampaignDto,
+  UpdateCampaignDto,
   SubmitBidDto,
 } from './dto/influencer.dto';
 import {
@@ -17,6 +18,7 @@ import {
   NotificationType,
   ContentStatus,
   CampaignPaymentStatus,
+  Prisma,
 } from '@prisma/client';
 import { NotificationsService } from '../notifications/notifications.service';
 import { scrubNestedShops } from '../../common/helpers/sanitize.helper';
@@ -321,21 +323,45 @@ export class InfluencerService {
   async updateCampaign(
     shopkeeperId: string,
     campaignId: string,
-    dto: Partial<CreateCampaignDto>,
+    dto: UpdateCampaignDto,
   ) {
     const campaign = await this.prisma.influencerCampaign.findFirst({
       where: { id: campaignId, shopkeeperId },
     });
     if (!campaign) throw new NotFoundException('Campaign not found');
 
+    const data: Prisma.InfluencerCampaignUpdateInput = {};
+    if (dto.title !== undefined) data.title = dto.title;
+    if (dto.description !== undefined) data.description = dto.description;
+    if (dto.platforms !== undefined) data.platforms = dto.platforms;
+    if (dto.contentTypes !== undefined) data.contentTypes = dto.contentTypes;
+    if (dto.creatorCount !== undefined) data.creatorCount = dto.creatorCount;
+    if (dto.budgetType !== undefined) data.budgetType = dto.budgetType;
+    if (dto.budgetMin !== undefined) data.budgetMin = dto.budgetMin;
+    if (dto.budgetMax !== undefined) data.budgetMax = dto.budgetMax;
+    if (dto.city !== undefined) data.city = dto.city;
+    if (dto.targetCategories !== undefined) {
+      data.targetCategories = dto.targetCategories;
+    }
+    if (dto.productId) {
+      data.product = { connect: { id: dto.productId } };
+    } else if (dto.productId === null && campaign.productId) {
+      data.product = { disconnect: true };
+    }
+    if (dto.applicationDeadline !== undefined) {
+      data.applicationDeadline = dto.applicationDeadline
+        ? new Date(dto.applicationDeadline)
+        : null;
+    }
+    if (dto.publishByDate !== undefined) {
+      data.publishByDate = dto.publishByDate
+        ? new Date(dto.publishByDate)
+        : null;
+    }
+
     return this.prisma.influencerCampaign.update({
       where: { id: campaignId },
-      data: {
-        title: dto.title,
-        description: dto.description,
-        budgetMax: dto.budgetMax,
-        budgetMin: dto.budgetMin,
-      },
+      data,
     });
   }
 
@@ -359,7 +385,13 @@ export class InfluencerService {
     return this.prisma.influencerBid.findMany({
       where: { campaignId, status: { not: BidStatus.WITHDRAWN } },
       include: {
-        influencer: { include: { user: { select: { avatarUrl: true } } } },
+        influencer: {
+          include: {
+            user: {
+              select: { id: true, name: true, avatarUrl: true, mobile: true },
+            },
+          },
+        },
       },
       orderBy: { proposedAmount: 'asc' },
     });

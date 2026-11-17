@@ -11,7 +11,7 @@ import {
   MinLength,
   MaxLength,
 } from 'class-validator';
-import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { ApiProperty, ApiPropertyOptional, PartialType } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import { BudgetType } from '@prisma/client';
 
@@ -146,6 +146,8 @@ export class CreateCampaignDto {
   @IsOptional()
   publishByDate?: string;
 }
+
+export class UpdateCampaignDto extends PartialType(CreateCampaignDto) {}
 
 export class SubmitBidDto {
   @ApiProperty()
